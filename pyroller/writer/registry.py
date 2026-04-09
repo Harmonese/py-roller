@@ -19,21 +19,21 @@ def build_writer(backend_name: str | None, config: dict[str, Any] | None = None)
     config = dict(config or {})
     by_tag = str(config.get("by_tag") or "py-roller")
     tag_type = str(config.get("tag_type") or "kf")
-    reserve_spacing = bool(config.get("reserve_spacing", False))
-    skip_structural_lines = bool(config.get("skip_structural_lines", True))
+    spacing = str(config.get("spacing", "keep")).strip().lower()
+    keep_spacing = spacing != "drop"
     unmatched_line_duration = float(config.get("unmatched_line_duration", 0.6))
 
     if backend == "lrc_ms":
-        return LRCWriter(decimals=3, compressed=False, by_tag=by_tag, reserve_spacing=reserve_spacing)
+        return LRCWriter(decimals=3, compressed=False, by_tag=by_tag, keep_spacing=keep_spacing)
     if backend == "lrc_cs":
-        return LRCWriter(decimals=2, compressed=False, by_tag=by_tag, reserve_spacing=reserve_spacing)
+        return LRCWriter(decimals=2, compressed=False, by_tag=by_tag, keep_spacing=keep_spacing)
     if backend == "lrc_compressed":
-        return LRCWriter(decimals=2, compressed=True, by_tag=by_tag, reserve_spacing=False)
+        return LRCWriter(decimals=2, compressed=True, by_tag=by_tag, keep_spacing=False)
     if backend == "ass_karaoke":
         return ASSKaraokeWriter(
             by_tag=by_tag,
             tag_type=tag_type,
-            skip_structural_lines=skip_structural_lines,
+            skip_structural_lines=not keep_spacing,
             unmatched_line_duration=unmatched_line_duration,
         )
 

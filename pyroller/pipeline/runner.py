@@ -98,7 +98,6 @@ class ComposablePipelineRunner:
                 lyrics_document = self._load_lyrics_document(
                     request.lyrics_path,
                     language=effective_language,
-                    reserve_spacing=request.reserve_spacing,
                     requested_encoding=request.parser_lyrics_encoding,
                 )
                 registry["lyrics_text"] = lyrics_document
@@ -230,9 +229,9 @@ class ComposablePipelineRunner:
 
             if "writer" in stages:
                 alignment = self._require_registry_item(registry, "alignment_result", "writer")
-                output_path = request.output_written_path
+                output_path = request.output_roller_path
                 if output_path is None:
-                    raise ValueError("Writer stage requires --output-written.")
+                    raise ValueError("Writer stage requires --output-roller.")
                 writer = build_writer(
                     backend_name=str(writer_cfg.get("backend")) if writer_cfg.get("backend") else None,
                     config=writer_cfg,
@@ -320,10 +319,10 @@ class ComposablePipelineRunner:
             raise ValueError("--output-parsed-lyrics requires stage 'p'/'parser'.")
         if request.output_alignment_result_path is not None and "aligner" not in stages:
             raise ValueError("--output-alignment-result requires stage 'a'/'aligner'.")
-        if request.output_written_path is not None and "writer" not in stages:
-            raise ValueError("--output-written requires stage 'w'/'writer'.")
-        if "writer" in stages and request.output_written_path is None:
-            raise ValueError("Stage 'writer' requires --output-written.")
+        if request.output_roller_path is not None and "writer" not in stages:
+            raise ValueError("--output-roller requires stage 'w'/'writer'.")
+        if "writer" in stages and request.output_roller_path is None:
+            raise ValueError("Stage 'writer' requires --output-roller.")
 
         self._validate_stage_specific_options(request, stages)
 
@@ -513,7 +512,7 @@ class ComposablePipelineRunner:
                 return item
         raise ValueError(f"Stage '{stage}' requires an audio artifact, but none is available.")
 
-    def _load_lyrics_document(self, lyrics_path: Path, language: str, reserve_spacing: bool, requested_encoding: str | None) -> LyricsDocument:
+    def _load_lyrics_document(self, lyrics_path: Path, language: str, requested_encoding: str | None) -> LyricsDocument:
         normalized_request = self._normalize_lyrics_encoding(requested_encoding)
         raw_text, used_encoding = self._read_lyrics_text(lyrics_path, normalized_request)
 
@@ -525,7 +524,7 @@ class ComposablePipelineRunner:
                 lines.append(LyricLine(line_index=len(lines), raw_text=stripped))
                 last_was_spacing = False
                 continue
-            if reserve_spacing and not last_was_spacing:
+            if not last_was_spacing:
                 lines.append(
                     LyricLine(
                         line_index=len(lines),
@@ -536,10 +535,9 @@ class ComposablePipelineRunner:
                 last_was_spacing = True
 
         logger.info(
-            "Loaded lyrics: %d lines from %s (reserve_spacing=%s, requested_encoding=%s, used_encoding=%s)",
+            "Loaded lyrics: %d lines from %s (spacing lines preserved, requested_encoding=%s, used_encoding=%s)",
             len(lines),
             lyrics_path,
-            reserve_spacing,
             normalized_request,
             used_encoding,
         )
@@ -549,7 +547,7 @@ class ComposablePipelineRunner:
             encoding=used_encoding,
             lines=lines,
             language=language,
-            metadata={"reserve_spacing": reserve_spacing, "requested_encoding": normalized_request},
+            metadata={"spacing_lines_preserved": True, "requested_encoding": normalized_request},
         )
 
     def _normalize_lyrics_encoding(self, requested_encoding: str | None) -> str:

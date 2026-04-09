@@ -340,9 +340,8 @@ class PipelineRequest:
     output_timed_units_path: Optional[Path] = None
     output_parsed_lyrics_path: Optional[Path] = None
     output_alignment_result_path: Optional[Path] = None
-    output_written_path: Optional[Path] = None
+    output_roller_path: Optional[Path] = None
     log_level: str = "INFO"
-    reserve_spacing: bool = True
     parser_lyrics_encoding: Optional[str] = None
     backend_config: dict[str, Any] = field(default_factory=dict)
 

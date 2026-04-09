@@ -13,7 +13,7 @@ _SHARED_ALLOWED_KEYS = {
     "writer_backend",
     "filter_chain",
     "parser_lyrics_encoding",
-    "reserve_spacing",
+    "writer_spacing",
     "intermediate",
     "log_level",
     "transcriber_device",
@@ -35,6 +35,9 @@ _BATCH_ALLOWED_KEYS = {
     "jobs",
     "audio_glob",
     "lyrics_glob",
+    "timed_units_glob",
+    "parsed_lyrics_glob",
+    "alignment_result_glob",
 }
 _ALLOWED_SECTIONS = {"shared", "run", "batch"}
 

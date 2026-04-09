@@ -16,7 +16,6 @@ from pyroller.progress import LoggingProgressReporter
 
 logger = logging.getLogger("pyroller.batch")
 
-_JSON_GLOB = "*.json"
 _MANIFEST_INPUT_KEYS = (
     "audio",
     "lyrics",
@@ -30,7 +29,7 @@ _MANIFEST_OUTPUT_KEYS = (
     "output_timed_units",
     "output_parsed_lyrics",
     "output_alignment_result",
-    "output_written",
+    "output_roller",
 )
 _MANIFEST_ALLOWED_KEYS = set(_MANIFEST_INPUT_KEYS + _MANIFEST_OUTPUT_KEYS + ("id",))
 
@@ -69,12 +68,23 @@ def batch_task_log_file(intermediate_dir: Path) -> Path:
 
 
 class BatchBuilder:
-    def __init__(self, pair_by: str = "stem", audio_glob: str = "*.mp3", lyrics_glob: str = "*.txt") -> None:
+    def __init__(
+        self,
+        pair_by: str = "stem",
+        audio_glob: str = "*.mp3",
+        lyrics_glob: str = "*.txt",
+        timed_units_glob: str = "*.json",
+        parsed_lyrics_glob: str = "*.json",
+        alignment_result_glob: str = "*.json",
+    ) -> None:
         if pair_by != "stem":
             raise ValueError(f"Unsupported --pair-by: {pair_by}. Currently only 'stem' is supported.")
         self.pair_by = pair_by
         self.audio_glob = audio_glob
         self.lyrics_glob = lyrics_glob
+        self.timed_units_glob = timed_units_glob
+        self.parsed_lyrics_glob = parsed_lyrics_glob
+        self.alignment_result_glob = alignment_result_glob
 
     def build_tasks(self, request: PipelineRequest) -> list[BatchTask]:
         stages = ComposablePipelineRunner()._resolve_execution_plan(request)
@@ -156,8 +166,8 @@ class BatchBuilder:
         ]
 
     def _build_from_timed_and_parsed(self, request: PipelineRequest) -> list[BatchTask]:
-        timed_files = self._glob_dir(request.timed_units_path, _JSON_GLOB, "--timed-units")
-        parsed_files = self._glob_dir(request.parsed_lyrics_path, _JSON_GLOB, "--parsed-lyrics")
+        timed_files = self._glob_dir(request.timed_units_path, self.timed_units_glob, "--timed-units")
+        parsed_files = self._glob_dir(request.parsed_lyrics_path, self.parsed_lyrics_glob, "--parsed-lyrics")
         timed_by_stem = self._map_by_stem(timed_files)
         parsed_by_stem = self._map_by_stem(parsed_files)
         matched = sorted(set(timed_by_stem) & set(parsed_by_stem))
@@ -177,7 +187,7 @@ class BatchBuilder:
         ]
 
     def _build_from_alignment_only(self, request: PipelineRequest) -> list[BatchTask]:
-        alignment_files = self._glob_dir(request.alignment_result_path, _JSON_GLOB, "--alignment-result")
+        alignment_files = self._glob_dir(request.alignment_result_path, self.alignment_result_glob, "--alignment-result")
         alignment_by_stem = self._map_by_stem(alignment_files)
         return [
             self._task_for_stem(index=index, stem=stem, request=request, alignment_result_path=path)
@@ -211,9 +221,8 @@ class BatchBuilder:
             output_timed_units_path=_path_for_dir_output(request.output_timed_units_path, stem, suffix=".json"),
             output_parsed_lyrics_path=_path_for_dir_output(request.output_parsed_lyrics_path, stem, suffix=".json"),
             output_alignment_result_path=_path_for_dir_output(request.output_alignment_result_path, stem, suffix=".json"),
-            output_written_path=_path_for_dir_output(request.output_written_path, stem, suffix=_written_suffix(request.backend_config.get("writer", {}).get("backend"))),
+            output_roller_path=_path_for_dir_output(request.output_roller_path, stem, suffix=_roller_suffix(request.backend_config.get("writer", {}).get("backend"))),
             log_level=request.log_level,
-            reserve_spacing=request.reserve_spacing,
             parser_lyrics_encoding=request.parser_lyrics_encoding,
             backend_config=request.backend_config,
         )
@@ -276,7 +285,7 @@ class ManifestBatchBuilder:
             "  - id: song01\n"
             "    audio: ./audio/song01.mp3\n"
             "    lyrics: ./lyrics/song01.txt\n"
-            "    output_written: ./out/song01.lrc"
+            "    output_roller: ./out/song01.lrc"
         )
 
     def _task_from_entry(self, index: int, entry: dict[str, Any], request: PipelineRequest) -> BatchTask:
@@ -303,9 +312,8 @@ class ManifestBatchBuilder:
             output_timed_units_path=self._path_value(entry, "output_timed_units"),
             output_parsed_lyrics_path=self._path_value(entry, "output_parsed_lyrics"),
             output_alignment_result_path=self._path_value(entry, "output_alignment_result"),
-            output_written_path=self._path_value(entry, "output_written"),
+            output_roller_path=self._path_value(entry, "output_roller"),
             log_level=request.log_level,
-            reserve_spacing=request.reserve_spacing,
             parser_lyrics_encoding=request.parser_lyrics_encoding,
             backend_config=request.backend_config,
         )
@@ -348,7 +356,7 @@ def build_expected_outputs(request: PipelineRequest) -> list[Path]:
         request.output_timed_units_path,
         request.output_parsed_lyrics_path,
         request.output_alignment_result_path,
-        request.output_written_path,
+        request.output_roller_path,
     ):
         if path is not None:
             outputs.append(path)
@@ -361,7 +369,7 @@ def _path_for_dir_output(base: Optional[Path], stem: str, suffix: str) -> Option
     return base / f"{stem}{suffix}"
 
 
-def _written_suffix(writer_backend: object) -> str:
+def _roller_suffix(writer_backend: object) -> str:
     return ".ass" if str(writer_backend or "lrc_ms") == "ass_karaoke" else ".lrc"
 
 

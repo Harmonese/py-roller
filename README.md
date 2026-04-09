@@ -29,7 +29,7 @@ Core artifact types:
 - `timed_units`
 - `parsed_lyrics`
 - `alignment_result`
-- written outputs such as LRC or ASS
+- roller outputs such as LRC or ASS
 
 ## Installation
 
@@ -61,7 +61,7 @@ py-roller run \
   --audio ./song.mp3 \
   --lyrics ./song.txt \
   --filter-chain noise_gate,dereverb \
-  --output-written ./song.lrc
+  --output-roller ./song.lrc
   --language zh # Choose as you like
 ```
 
@@ -73,7 +73,7 @@ py-roller run \
   --audio ./vocals.wav \
   --lyrics ./song.txt \
   --writer-backend ass_karaoke \
-  --output-written ./song.ass
+  --output-roller ./song.ass
   --language zh # Choose as you like
 ```
 
@@ -84,7 +84,7 @@ py-roller batch \
   --stages t,p,a,w \
   --audio ./audio_dir \
   --lyrics ./lyrics_dir \
-  --output-written ./out_dir
+  --output-roller ./out_dir
   --language zh # Choose as you like
 ```
 
@@ -124,7 +124,7 @@ Final user-requested outputs are only the explicit `--output-*` paths:
 - `--output-timed-units`
 - `--output-parsed-lyrics`
 - `--output-alignment-result`
-- `--output-written`
+- `--output-roller`
 
 Everything else created under `--intermediate` is treated as intermediate state.
 
@@ -139,7 +139,7 @@ py-roller run \
   --stages s,f,t,p,a,w \
   --audio ./song.mp3 \
   --lyrics ./song.txt \
-  --output-written ./song.lrc
+  --output-roller ./song.lrc
 ```
 
 ### Start from filtered or vocal audio
@@ -151,7 +151,7 @@ py-roller run \
   --stages t,p,a,w \
   --audio ./vocals.wav \
   --lyrics ./song.txt \
-  --output-written ./song.lrc
+  --output-roller ./song.lrc
 ```
 
 ### Start from aligner artifacts
@@ -161,7 +161,7 @@ py-roller run \
   --stages a,w \
   --timed-units ./song.timed_units.json \
   --parsed-lyrics ./song.parsed_lyrics.json \
-  --output-written ./song.lrc
+  --output-roller ./song.lrc
 ```
 
 ### Rewrite only from an existing alignment result
@@ -171,7 +171,7 @@ py-roller run \
   --stages w \
   --alignment-result ./song.alignment.json \
   --writer-backend ass_karaoke \
-  --output-written ./song.ass
+  --output-roller ./song.ass
 ```
 
 ## Backend defaults
@@ -195,7 +195,7 @@ Default backend selection is language-aware. Please note that the default select
 - aligner backend -> `global_dp_v1`
 - writer backend -> `lrc_ms`
 - language -> `mul`
-- `reserve_spacing` -> enabled
+- `writer_spacing` -> keep
 - `cleanup` -> `on-success`
 
 ## Writer behavior
@@ -225,7 +225,7 @@ py-roller run \
   --stages w \
   --alignment-result ./song.alignment.json \
   --writer-backend ass_karaoke \
-  --output-written ./song.ass
+  --output-roller ./song.ass
 ```
 
 ## Progress reporting
@@ -288,7 +288,7 @@ py-roller batch \
   --stages t,p,a,w \
   --audio ./audio_dir \
   --lyrics ./lyrics_dir \
-  --output-written ./out_dir
+  --output-roller ./out_dir
 ```
 
 ### Batch controls
@@ -320,7 +320,7 @@ tasks:
   - id: song01
     audio: ./audio/song01_master.mp3
     lyrics: ./lyrics/song01_final.txt
-    output_written: ./out/song01.lrc
+    output_roller: ./out/song01.lrc
 ```
 
 or:
@@ -329,7 +329,7 @@ or:
 - id: song01
   audio: ./audio/song01_master.mp3
   lyrics: ./lyrics/song01_final.txt
-  output_written: ./out/song01.lrc
+  output_roller: ./out/song01.lrc
 ```
 
 Allowed manifest input keys:
@@ -347,7 +347,7 @@ Allowed manifest output keys:
 - `output_timed_units`
 - `output_parsed_lyrics`
 - `output_alignment_result`
-- `output_written`
+- `output_roller`
 
 Optional helper key:
 
@@ -384,7 +384,7 @@ Example:
 ```yaml
 shared:
   language: mul
-  reserve_spacing: true
+  writer_spacing: keep
   writer_backend: lrc_ms
   intermediate: ./tmp/py-roller-artifacts
   cleanup: on-success
@@ -398,6 +398,9 @@ batch:
   jobs: 2
   audio_glob: "*.mp3"
   lyrics_glob: "*.txt"
+  timed_units_glob: "*.json"
+  parsed_lyrics_glob: "*.json"
+  alignment_result_glob: "*.json"
   continue_on_error: true
 ```
 

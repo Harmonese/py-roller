@@ -12,11 +12,11 @@ logger = logging.getLogger("pyroller.writer")
 
 
 class LRCWriter(Writer):
-    def __init__(self, decimals: int = 3, compressed: bool = False, by_tag: str = "py-roller", reserve_spacing: bool = False) -> None:
+    def __init__(self, decimals: int = 3, compressed: bool = False, by_tag: str = "py-roller", keep_spacing: bool = False) -> None:
         self.decimals = decimals
         self.compressed = compressed
         self.by_tag = by_tag
-        self.reserve_spacing = reserve_spacing
+        self.keep_spacing = keep_spacing
 
     @property
     def backend_name(self) -> str:
@@ -48,7 +48,7 @@ class LRCWriter(Writer):
             else:
                 for index, line in enumerate(alignment.lines):
                     if self._is_spacing_line(line):
-                        if not self.reserve_spacing:
+                        if not self.keep_spacing:
                             continue
                         spacing_time = self._spacing_timestamp(alignment.lines, index)
                         f.write(f"{self._fmt(spacing_time)}\n")
@@ -66,7 +66,7 @@ class LRCWriter(Writer):
                 "line_count": written_line_count,
                 "decimals": self.decimals,
                 "compressed": self.compressed,
-                "reserve_spacing": self.reserve_spacing,
+                "spacing": "keep" if self.keep_spacing else "drop",
             },
         )
 

@@ -11,8 +11,8 @@ from pyroller.utils.ids import make_id
 logger = logging.getLogger("pyroller.filter")
 
 
-class NaraWPEDereverbFilter(AudioFilter):
-    name = "dereverb_nara_wpe"
+class DereverbFilter(AudioFilter):
+    name = "dereverb"
 
     def __init__(
         self,
@@ -45,19 +45,19 @@ class NaraWPEDereverbFilter(AudioFilter):
             from nara_wpe.wpe import wpe_v8  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "dereverb_nara_wpe dependencies are not installed. Install with: pip install nara_wpe numpy soundfile scipy bottleneck"
+                "dereverb dependencies are not installed. Install with: pip install nara_wpe numpy soundfile scipy bottleneck"
             ) from exc
 
         if audio_artifact.path is None:
-            raise ValueError("dereverb_nara_wpe requires an audio artifact with a concrete path")
+            raise ValueError("dereverb requires an audio artifact with a concrete path")
 
         source_path = Path(audio_artifact.path)
         if not source_path.exists():
-            raise FileNotFoundError(f"Audio file not found for dereverb_nara_wpe filter: {source_path}")
+            raise FileNotFoundError(f"Audio file not found for dereverb filter: {source_path}")
 
         audio, sample_rate = sf.read(str(source_path), always_2d=True)
         if audio.size == 0:
-            logger.warning("dereverb_nara_wpe received empty audio at %s; forwarding unchanged", source_path)
+            logger.warning("dereverb received empty audio at %s; forwarding unchanged", source_path)
             return audio_artifact
 
         time_major = np.asarray(audio, dtype=np.float64)
@@ -67,7 +67,7 @@ class NaraWPEDereverbFilter(AudioFilter):
 
         if original_samples < self.stft_size:
             logger.warning(
-                "dereverb_nara_wpe input shorter than stft_size (%d < %d); forwarding unchanged",
+                "dereverb input shorter than stft_size (%d < %d); forwarding unchanged",
                 original_samples,
                 self.stft_size,
             )
@@ -90,7 +90,7 @@ class NaraWPEDereverbFilter(AudioFilter):
             X = np.transpose(X_fdt, (1, 2, 0))
             dereverb = istft(X, size=self.stft_size, shift=self.stft_shift)
         except Exception as exc:
-            raise RuntimeError(f"dereverb_nara_wpe failed while processing {source_path}: {exc}") from exc
+            raise RuntimeError(f"dereverb failed while processing {source_path}: {exc}") from exc
 
         dereverb = np.asarray(dereverb, dtype=np.float64)
         if dereverb.ndim == 1:
@@ -106,7 +106,7 @@ class NaraWPEDereverbFilter(AudioFilter):
 
         processed = dereverb.T.astype(audio.dtype, copy=False)
         output_dir.mkdir(parents=True, exist_ok=True)
-        destination = output_dir / f"{source_path.stem}.dereverb_nara_wpe{source_path.suffix}"
+        destination = output_dir / f"{source_path.stem}.dereverb{source_path.suffix}"
         sf.write(str(destination), processed, sample_rate)
 
         output_peak = float(np.max(np.abs(dereverb))) if dereverb.size else 0.0
@@ -126,6 +126,7 @@ class NaraWPEDereverbFilter(AudioFilter):
         metadata.update(
             {
                 "backend": self.name,
+                "implementation": "nara_wpe",
                 "source_artifact_id": audio_artifact.artifact_id,
                 "source_audio": str(source_path),
                 "sample_rate": int(sample_rate),

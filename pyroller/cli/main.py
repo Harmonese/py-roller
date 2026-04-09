@@ -6,100 +6,110 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Iterable
 
-from pyroller.batch import BatchBuilder, BatchRunner, ManifestBatchBuilder, batch_task_log_file
 from pyroller.cli.config import apply_cli_config_defaults, load_cli_config, preparse_config_path
-from pyroller.domain import PipelineRequest
-from pyroller.logging_utils import configure_logging
-from pyroller.pipeline import ComposablePipelineRunner
-from pyroller.progress import build_cli_progress_reporter
-from pyroller.utils.ids import make_id
 
 
 def _default_intermediate_dir() -> Path:
     return Path(tempfile.gettempdir()) / "py-roller-artifacts"
 
 
-def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode: bool) -> None:
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Optional YAML config file for overriding CLI defaults. Priority is: built-in defaults < config file < explicit CLI flags.",
+def _build_subparser_description(*, batch_mode: bool) -> str:
+    io_line = "All inputs/outputs are directories unless --manifest is used." if batch_mode else "All inputs/outputs are file paths."
+    detail = (
+        "Run the same contiguous stage chain across multiple tasks, either by stem-matching directories or by loading a YAML manifest."
+        if batch_mode
+        else "Run one contiguous pipeline stage chain. Inputs must match the first selected stage, and explicit artifacts are only allowed at legal chain starts."
     )
-    parser.add_argument(
+    return f"{io_line}\n\n{detail}"
+
+
+def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode: bool) -> None:
+    stages_group = parser.add_argument_group("stages")
+    stages_group.add_argument(
         "--stages",
         required=True,
         help=(
-            "Comma-separated contiguous stage chain. Allowed canonical order is s,f,t,p,a,w. "
-            "Examples: s,f,t,p,a,w ; t,p,a,w ; a,w ; w."
+            "Comma-separated contiguous stage chain in canonical order s,f,t,p,a,w (splitter, filter, transcriber, parser, aligner, writer). "
+            "Examples: s,f,t,p,a,w ; t,p,a,w ; a,w ; w. Do not skip over intermediate stages."
         ),
     )
 
-    parser.add_argument("--audio", type=Path, default=None, help=("Input audio directory" if batch_mode else "Input audio file path"))
-    parser.add_argument("--lyrics", type=Path, default=None, help=("Input plain-text lyrics directory" if batch_mode else "Input plain-text lyrics file path"))
-    parser.add_argument("--timed-units", type=Path, default=None, help=("Input timed_units artifact directory" if batch_mode else "Input timed_units artifact JSON path"))
-    parser.add_argument("--parsed-lyrics", type=Path, default=None, help=("Input parsed_lyrics artifact directory" if batch_mode else "Input parsed_lyrics artifact JSON path"))
-    parser.add_argument("--alignment-result", type=Path, default=None, help=("Input alignment_result artifact directory" if batch_mode else "Input alignment_result artifact JSON path"))
+    inputs = parser.add_argument_group("inputs")
+    inputs.add_argument("--audio", type=Path, default=None, help=("Input audio directory" if batch_mode else "Input audio file path"))
+    inputs.add_argument("--lyrics", type=Path, default=None, help=("Input plain-text lyrics directory" if batch_mode else "Input plain-text lyrics file path"))
+    inputs.add_argument("--timed-units", type=Path, default=None, help=("Input timed_units artifact directory" if batch_mode else "Input timed_units artifact JSON path"))
+    inputs.add_argument("--parsed-lyrics", type=Path, default=None, help=("Input parsed_lyrics artifact directory" if batch_mode else "Input parsed_lyrics artifact JSON path"))
+    inputs.add_argument("--alignment-result", type=Path, default=None, help=("Input alignment_result artifact directory" if batch_mode else "Input alignment_result artifact JSON path"))
 
-    parser.add_argument("--output-vocal-audio", type=Path, default=None, help=("Optional output directory for final vocal audio artifacts" if batch_mode else "Optional output path for final vocal audio artifact"))
-    parser.add_argument("--output-filtered-audio", type=Path, default=None, help=("Optional output directory for final filtered audio artifacts" if batch_mode else "Optional output path for final filtered audio artifact"))
-    parser.add_argument("--output-timed-units", type=Path, default=None, help=("Optional output directory for final timed_units artifacts" if batch_mode else "Optional output path for final timed_units artifact"))
-    parser.add_argument("--output-parsed-lyrics", type=Path, default=None, help=("Optional output directory for final parsed_lyrics artifacts" if batch_mode else "Optional output path for final parsed_lyrics artifact"))
-    parser.add_argument("--output-alignment-result", type=Path, default=None, help=("Optional output directory for final alignment_result artifacts" if batch_mode else "Optional output path for final alignment_result artifact"))
-    parser.add_argument("--output-written", type=Path, default=None, help=("Required when stage chain includes writer. In batch mode this must be a directory." if batch_mode else "Required when stage chain includes writer."))
+    outputs = parser.add_argument_group("outputs")
+    outputs.add_argument("--output-vocal-audio", type=Path, default=None, help=("Optional output directory for final vocal audio artifacts" if batch_mode else "Optional output path for final vocal audio artifact"))
+    outputs.add_argument("--output-filtered-audio", type=Path, default=None, help=("Optional output directory for final filtered audio artifacts" if batch_mode else "Optional output path for final filtered audio artifact"))
+    outputs.add_argument("--output-timed-units", type=Path, default=None, help=("Optional output directory for final timed_units artifacts" if batch_mode else "Optional output path for final timed_units artifact"))
+    outputs.add_argument("--output-parsed-lyrics", type=Path, default=None, help=("Optional output directory for final parsed_lyrics artifacts" if batch_mode else "Optional output path for final parsed_lyrics artifact"))
+    outputs.add_argument("--output-alignment-result", type=Path, default=None, help=("Optional output directory for final alignment_result artifacts" if batch_mode else "Optional output path for final alignment_result artifact"))
+    outputs.add_argument("--output-roller", type=Path, default=None, help=("Required when stage chain includes writer. In batch mode this must be a directory." if batch_mode else "Required when stage chain includes writer."))
 
-    parser.add_argument("--language", default="mul", help="Pipeline language. Supported values: zh, en, mul. Default: mul")
-    parser.add_argument("--transcriber-backend", default=None, help="Optional transcriber backend override for the selected language")
-    parser.add_argument("--aligner-backend", default=None, help="Optional aligner backend override. Internal default is used when omitted")
-    parser.add_argument("--writer-backend", default=None, help="Optional writer backend override. Internal default is used when omitted")
-    parser.add_argument(
+    stage_options = parser.add_argument_group("stage configuration")
+    stage_options.add_argument("--language", default="mul", help="Pipeline language. Supported values: zh, en, mul. Default: mul")
+    stage_options.add_argument("--splitter-demucs-model", default=None, help="Optional Demucs model name override for stage s")
+    stage_options.add_argument(
         "--filter-chain",
         default=None,
         help="Filter chain for stage f. CLI accepts comma-separated steps, e.g. noise_gate,dereverb. YAML config may use either the same string or a YAML list.",
     )
-    parser.add_argument(
+    stage_options.add_argument("--transcriber-backend", default=None, help="Optional transcriber backend override for the selected language")
+    stage_options.add_argument("--transcriber-device", default=None, help="Inference device passed to supported transcriber backends")
+    stage_options.add_argument("--transcriber-model-name", default=None, help="Optional transcriber model override")
+    stage_options.add_argument("--transcriber-compute-type", default=None, help="Optional WhisperX compute type override")
+    stage_options.add_argument("--transcriber-batch-size", type=int, default=None, help="Optional WhisperX inference batch size override")
+    stage_options.add_argument("--transcriber-no-align-words", action="store_true", default=None, help="Disable WhisperX word alignment")
+    stage_options.add_argument(
         "--parser-lyrics-encoding",
         default=None,
         choices=["auto", "utf-8", "utf-8-sig", "utf-16", "gbk", "gb18030", "shift-jis"],
         help="Lyrics text encoding for stage p. Default: auto",
     )
-    parser.add_argument("--reserve-spacing", dest="reserve_spacing", action="store_true", default=True, help="Preserve a single blank lyric line as a structural row. Default: enabled")
-    parser.add_argument("--no-reserve-spacing", dest="reserve_spacing", action="store_false", help="Disable blank-line preservation")
-    parser.add_argument(
+    stage_options.add_argument("--aligner-backend", default=None, help="Optional aligner backend override. Internal default is used when omitted")
+    stage_options.add_argument("--aligner-min-gap", type=float, default=None, help="Optional minimum post-repair gap between aligned lyric lines")
+    stage_options.add_argument("--writer-backend", default=None, help="Optional writer backend override. Internal default is used when omitted")
+    stage_options.add_argument("--writer-spacing", choices=["keep", "drop"], default=None, help="Whether writer outputs structural blank lyric lines. Default: keep")
+    stage_options.add_argument("--writer-by-tag", default=None, help="Optional writer BY tag used by LRC and ASS outputs")
+    stage_options.add_argument("--writer-ass-karaoke-tag-type", choices=["k", "K", "kf", "ko"], default=None, help="ASS karaoke tag type when --writer-backend ass_karaoke")
+
+    runtime = parser.add_argument_group("runtime control")
+    runtime.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Optional YAML config file for overriding CLI defaults. Priority is: built-in defaults < config file < explicit CLI flags.",
+    )
+    runtime.add_argument(
         "--intermediate",
         type=Path,
         default=_default_intermediate_dir(),
         help="Root directory for intermediate splitter/filter/log files. The tool creates per-task splitter/, filter/, and logs/ subdirectories here.",
     )
-    parser.add_argument(
+    runtime.add_argument(
         "--cleanup",
         choices=["on-success", "never"],
         default="on-success",
         help="Whether to remove intermediate directories after successful tasks. Default: on-success",
     )
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Console and file log verbosity")
-
-    parser.add_argument("--transcriber-device", default=None, help="Inference device passed to supported transcriber backends")
-    parser.add_argument("--transcriber-model-name", default=None, help="Optional transcriber model override")
-    parser.add_argument("--transcriber-compute-type", default=None, help="Optional WhisperX compute type override")
-    parser.add_argument("--transcriber-batch-size", type=int, default=None, help="Optional WhisperX inference batch size override")
-    parser.add_argument("--transcriber-no-align-words", action="store_true", default=None, help="Disable WhisperX word alignment")
-    parser.add_argument("--splitter-demucs-model", default=None, help="Optional Demucs model name override for stage s")
-
-    parser.add_argument("--aligner-min-gap", type=float, default=None, help="Optional minimum post-repair gap between aligned lyric lines")
-    parser.add_argument("--writer-by-tag", default=None, help="Optional writer BY tag used by LRC and ASS outputs")
-    parser.add_argument("--writer-ass-karaoke-tag-type", choices=["k", "K", "kf", "ko"], default=None, help="ASS karaoke tag type when --writer-backend ass_karaoke")
+    runtime.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Console and file log verbosity")
 
     if batch_mode:
-        parser.add_argument("--continue-on-error", action="store_true", help="Keep processing remaining tasks after a task failure")
-        parser.add_argument("--skip-existing", action="store_true", help="Skip tasks whose declared final outputs already all exist")
-        parser.add_argument("--pair-by", choices=["stem"], default="stem", help="Directory pairing strategy. Current supported value: stem")
-        parser.add_argument("--jobs", type=int, default=1, help="Maximum number of parallel batch workers. Default: 1")
-        parser.add_argument("--audio-glob", default="*.mp3", help="Non-recursive glob for candidate audio files in batch mode. Default: *.mp3")
-        parser.add_argument("--lyrics-glob", default="*.txt", help="Non-recursive glob for candidate lyric files in batch mode. Default: *.txt")
-        parser.add_argument(
+        batch = parser.add_argument_group("batch-only")
+        batch.add_argument("--continue-on-error", action="store_true", help="Keep processing remaining tasks after a task failure")
+        batch.add_argument("--skip-existing", action="store_true", help="Skip tasks whose declared final outputs already all exist")
+        batch.add_argument("--pair-by", choices=["stem"], default="stem", help="Directory pairing strategy. Current supported value: stem")
+        batch.add_argument("--jobs", type=int, default=1, help="Maximum number of parallel batch workers. Default: 1")
+        batch.add_argument("--audio-glob", default="*.mp3", help="Non-recursive glob for candidate audio files in batch mode. Default: *.mp3")
+        batch.add_argument("--lyrics-glob", default="*.txt", help="Non-recursive glob for candidate lyric files in batch mode. Default: *.txt")
+        batch.add_argument("--timed-units-glob", default="*.json", help="Non-recursive glob for candidate timed_units artifacts in batch mode. Default: *.json")
+        batch.add_argument("--parsed-lyrics-glob", default="*.json", help="Non-recursive glob for candidate parsed_lyrics artifacts in batch mode. Default: *.json")
+        batch.add_argument("--alignment-result-glob", default="*.json", help="Non-recursive glob for candidate alignment_result artifacts in batch mode. Default: *.json")
+        batch.add_argument(
             "--manifest",
             type=Path,
             default=None,
@@ -108,20 +118,27 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
 
 
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
-    parser = argparse.ArgumentParser(prog="py-roller", description="Composable lyric-audio alignment pipeline with single-run and batch execution modes.")
+    formatter = argparse.RawTextHelpFormatter
+    parser = argparse.ArgumentParser(
+        prog="py-roller",
+        description="Composable lyric-audio alignment pipeline with single-run and batch execution modes.",
+        formatter_class=formatter,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run = subparsers.add_parser(
         "run",
         help="Run one contiguous pipeline stage chain for a single task.",
-        description="Run one contiguous pipeline stage chain. Inputs must match the first selected stage, and explicit artifacts are only allowed at legal chain starts.",
+        description=_build_subparser_description(batch_mode=False),
+        formatter_class=formatter,
     )
     _add_shared_runlike_arguments(run, batch_mode=False)
 
     batch = subparsers.add_parser(
         "batch",
         help="Run the same contiguous stage chain across multiple tasks.",
-        description="Run the same contiguous stage chain across multiple tasks, either by stem-matching directories or by loading a YAML manifest.",
+        description=_build_subparser_description(batch_mode=True),
+        formatter_class=formatter,
     )
     _add_shared_runlike_arguments(batch, batch_mode=True)
     return parser, run, batch
@@ -175,7 +192,7 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     if args.aligner_min_gap is not None:
         aligner_cfg["min_gap"] = args.aligner_min_gap
 
-    writer_cfg: dict[str, object] = {"reserve_spacing": args.reserve_spacing}
+    writer_cfg: dict[str, object] = {"spacing": args.writer_spacing or "keep"}
     if args.writer_backend is not None:
         writer_cfg["backend"] = args.writer_backend
     if args.writer_by_tag is not None:
@@ -193,7 +210,9 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _build_request(args: argparse.Namespace) -> PipelineRequest:
+def _build_request(args: argparse.Namespace):
+    from pyroller.domain import PipelineRequest
+
     return PipelineRequest(
         stages=_split_stages(args.stages),
         audio_path=args.audio,
@@ -209,15 +228,16 @@ def _build_request(args: argparse.Namespace) -> PipelineRequest:
         output_timed_units_path=args.output_timed_units,
         output_parsed_lyrics_path=args.output_parsed_lyrics,
         output_alignment_result_path=args.output_alignment_result,
-        output_written_path=args.output_written,
+        output_roller_path=args.output_roller,
         log_level=args.log_level,
-        reserve_spacing=args.reserve_spacing,
         parser_lyrics_encoding=args.parser_lyrics_encoding,
         backend_config=_build_backend_config(args),
     )
 
 
-def _print_run_summary(result, request: PipelineRequest) -> None:
+def _print_run_summary(result, request) -> None:
+    from pyroller.batch import batch_task_log_file
+
     print("[OK] pipeline complete")
     print(f"  executed stages        : {', '.join(result.executed_stages)}")
     if result.source_audio_artifact is not None:
@@ -236,7 +256,7 @@ def _print_run_summary(result, request: PipelineRequest) -> None:
         ("output timed units", request.output_timed_units_path),
         ("output parsed lyrics", request.output_parsed_lyrics_path),
         ("output alignment", request.output_alignment_result_path),
-        ("written output", result.write_result.output_path if result.write_result is not None else None),
+        ("output roller", result.write_result.output_path if result.write_result is not None else None),
     ):
         if path is not None:
             print(f"  {label:<22}: {path}")
@@ -275,12 +295,19 @@ def _print_batch_summary(summary) -> None:
             print("           log           : cleaned after success")
 
 
-def _prepare_single_run_request(request: PipelineRequest) -> PipelineRequest:
+def _prepare_single_run_request(request):
+    from pyroller.utils.ids import make_id
+
     run_id = make_id("run")
     return replace(request, intermediate_dir=request.intermediate_dir / run_id)
 
 
-def _execute_run(request: PipelineRequest) -> None:
+def _execute_run(request) -> None:
+    from pyroller.batch import batch_task_log_file
+    from pyroller.logging_utils import configure_logging
+    from pyroller.pipeline import ComposablePipelineRunner
+    from pyroller.progress import build_cli_progress_reporter
+
     effective_request = _prepare_single_run_request(request)
     log_file = batch_task_log_file(effective_request.intermediate_dir)
     configure_logging(level=effective_request.log_level, log_file=log_file)
@@ -288,20 +315,20 @@ def _execute_run(request: PipelineRequest) -> None:
     _print_run_summary(result, effective_request)
 
 
-def _validate_batch_directory_outputs(request: PipelineRequest) -> None:
+def _validate_batch_directory_outputs(request) -> None:
     for label, path in (
         ("--output-vocal-audio", request.output_vocal_audio_path),
         ("--output-filtered-audio", request.output_filtered_audio_path),
         ("--output-timed-units", request.output_timed_units_path),
         ("--output-parsed-lyrics", request.output_parsed_lyrics_path),
         ("--output-alignment-result", request.output_alignment_result_path),
-        ("--output-written", request.output_written_path),
+        ("--output-roller", request.output_roller_path),
     ):
         if path is not None and path.exists() and not path.is_dir():
             raise ValueError(f"{label} must be a directory in batch mode: {path}")
 
 
-def _validate_manifest_batch_usage(request: PipelineRequest) -> None:
+def _validate_manifest_batch_usage(request) -> None:
     for label, path in (
         ("--audio", request.audio_path),
         ("--lyrics", request.lyrics_path),
@@ -313,7 +340,7 @@ def _validate_manifest_batch_usage(request: PipelineRequest) -> None:
         ("--output-timed-units", request.output_timed_units_path),
         ("--output-parsed-lyrics", request.output_parsed_lyrics_path),
         ("--output-alignment-result", request.output_alignment_result_path),
-        ("--output-written", request.output_written_path),
+        ("--output-roller", request.output_roller_path),
     ):
         if path is not None:
             raise ValueError(
@@ -321,7 +348,11 @@ def _validate_manifest_batch_usage(request: PipelineRequest) -> None:
             )
 
 
-def _execute_batch(args: argparse.Namespace, request: PipelineRequest) -> int:
+def _execute_batch(args: argparse.Namespace, request) -> int:
+    from pyroller.batch import BatchBuilder, BatchRunner, ManifestBatchBuilder
+    from pyroller.logging_utils import configure_logging
+    from pyroller.pipeline import ComposablePipelineRunner
+
     if args.jobs < 1:
         raise ValueError("--jobs must be at least 1.")
     configure_logging(level=request.log_level, log_file=None)
@@ -339,7 +370,14 @@ def _execute_batch(args: argparse.Namespace, request: PipelineRequest) -> int:
         runner = ComposablePipelineRunner()
         stages = runner._resolve_execution_plan(request)
         runner._validate_request(request, stages)
-        tasks = BatchBuilder(pair_by=args.pair_by, audio_glob=args.audio_glob, lyrics_glob=args.lyrics_glob).build_tasks(request)
+        tasks = BatchBuilder(
+            pair_by=args.pair_by,
+            audio_glob=args.audio_glob,
+            lyrics_glob=args.lyrics_glob,
+            timed_units_glob=args.timed_units_glob,
+            parsed_lyrics_glob=args.parsed_lyrics_glob,
+            alignment_result_glob=args.alignment_result_glob,
+        ).build_tasks(request)
 
     if not tasks:
         raise ValueError("Batch mode found no runnable tasks.")

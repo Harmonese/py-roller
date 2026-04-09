@@ -5,19 +5,17 @@ from typing import Any
 
 from pyroller.filter.base import AudioFilter
 from pyroller.filter.chain import FilterChain
-from pyroller.filter.dereverb_nara_wpe import NaraWPEDereverbFilter
+from pyroller.filter.dereverb import DereverbFilter
 from pyroller.filter.noise_gate import AdaptiveNoiseGateFilter
 
 _FILTER_FACTORIES: dict[str, type[AudioFilter]] = {
     "noise_gate": AdaptiveNoiseGateFilter,
-    "dereverb": NaraWPEDereverbFilter,
-    "dereverb_nara_wpe": NaraWPEDereverbFilter,
+    "dereverb": DereverbFilter,
 }
 
 _FILTER_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "noise_gate": ("numpy", "soundfile"),
     "dereverb": ("numpy", "soundfile", "scipy", "bottleneck", "nara_wpe"),
-    "dereverb_nara_wpe": ("numpy", "soundfile", "scipy", "bottleneck", "nara_wpe"),
 }
 
 
