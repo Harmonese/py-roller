@@ -1,6 +1,8 @@
 # py-roller
 
-`py-roller` is a composable lyric-audio alignment pipeline CLI for staged execution, batch processing, and LRC/ASS export.
+`py-roller` is a CLI Solution for automatic rolling lyrics generating.
+
+To be specific, `py-roller` is a composable lyric-audio alignment pipeline CLI for staged execution, batch processing, and LRC/ASS export. Designed to support multiple transcriber back-ends including WhisperX and wav2vec2.
 
 - Package name: `py-roller`
 - CLI command: `py-roller`
