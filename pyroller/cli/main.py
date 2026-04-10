@@ -52,7 +52,12 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
 
     stage_options = parser.add_argument_group("stage configuration")
     stage_options.add_argument("--language", default="mul", help="Pipeline language. Supported values: zh, en, mul. Default: mul")
-    stage_options.add_argument("--splitter-demucs-model", default=None, help="Optional Demucs model name override for stage s")
+    stage_options.add_argument("--splitter-backend", default=None, help="Optional splitter backend override. Internal default is used when omitted")
+    stage_options.add_argument("--splitter-demucs-model", default=None, help="Optional Demucs model name override for stage s when --splitter-backend demucs")
+    stage_options.add_argument("--splitter-demucs-device", default=None, help="Optional Demucs device override for stage s when --splitter-backend demucs")
+    stage_options.add_argument("--splitter-demucs-jobs", type=int, default=None, help="Optional Demucs parallel jobs override for stage s when --splitter-backend demucs")
+    stage_options.add_argument("--splitter-demucs-overlap", type=float, default=None, help="Optional Demucs chunk overlap override for stage s when --splitter-backend demucs")
+    stage_options.add_argument("--splitter-demucs-segment", type=float, default=None, help="Optional Demucs chunk size in seconds for stage s when --splitter-backend demucs")
     stage_options.add_argument(
         "--filter-chain",
         default=None,
@@ -165,8 +170,18 @@ def _split_csv(value: object) -> list[str]:
 
 def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     splitter_cfg: dict[str, object] = {"two_stems": "vocals"}
+    if args.splitter_backend is not None:
+        splitter_cfg["backend"] = args.splitter_backend
     if args.splitter_demucs_model is not None:
         splitter_cfg["model"] = args.splitter_demucs_model
+    if args.splitter_demucs_device is not None:
+        splitter_cfg["device"] = args.splitter_demucs_device
+    if args.splitter_demucs_jobs is not None:
+        splitter_cfg["jobs"] = args.splitter_demucs_jobs
+    if args.splitter_demucs_overlap is not None:
+        splitter_cfg["overlap"] = args.splitter_demucs_overlap
+    if args.splitter_demucs_segment is not None:
+        splitter_cfg["segment"] = args.splitter_demucs_segment
 
     filter_cfg: dict[str, object] = {}
     if args.filter_chain is not None:

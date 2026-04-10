@@ -389,7 +389,12 @@ shared:
   intermediate: ./tmp/py-roller-artifacts
   cleanup: on-success
   transcriber_device: cpu
+  splitter_backend: demucs
   splitter_demucs_model: htdemucs
+  splitter_demucs_device: cpu
+  splitter_demucs_jobs: 0
+  splitter_demucs_overlap: 0.25
+  splitter_demucs_segment: 8
   filter_chain:
     - noise_gate
     - dereverb

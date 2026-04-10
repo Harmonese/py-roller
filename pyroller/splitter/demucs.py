@@ -14,10 +14,23 @@ logger = logging.getLogger("pyroller.splitter")
 
 
 class DemucsSplitter(Splitter):
-    def __init__(self, output_dir: Path, model: str = "htdemucs", two_stems: str = "vocals") -> None:
+    def __init__(
+        self,
+        output_dir: Path,
+        model: str = "htdemucs",
+        two_stems: str = "vocals",
+        device: str | None = None,
+        jobs: int | None = None,
+        overlap: float | None = None,
+        segment: float | None = None,
+    ) -> None:
         self.output_dir = output_dir
         self.model = model
         self.two_stems = two_stems
+        self.device = device
+        self.jobs = jobs
+        self.overlap = overlap
+        self.segment = segment
 
     def split(self, audio_path: Path, progress: ProgressReporter | None = None) -> AudioArtifact:
         stage = progress.stage("splitter", total=2, unit="phase") if progress is not None else None
@@ -32,10 +45,20 @@ class DemucsSplitter(Splitter):
             self.model,
             "--two-stems",
             self.two_stems,
+        ]
+        if self.device:
+            cmd.extend(["-d", self.device])
+        if self.jobs is not None:
+            cmd.extend(["-j", str(self.jobs)])
+        if self.overlap is not None:
+            cmd.extend(["--overlap", str(self.overlap)])
+        if self.segment is not None:
+            cmd.extend(["--segment", str(self.segment)])
+        cmd.extend([
             "-o",
             str(self.output_dir),
             str(audio_path),
-        ]
+        ])
         logger.info("Running Demucs: %s", " ".join(cmd))
         run_subprocess(cmd)
 
@@ -56,6 +79,10 @@ class DemucsSplitter(Splitter):
                 "backend": "demucs",
                 "model": self.model,
                 "two_stems": self.two_stems,
+                "device": self.device,
+                "jobs": self.jobs,
+                "overlap": self.overlap,
+                "segment": self.segment,
                 "source_audio": str(audio_path),
             },
         )

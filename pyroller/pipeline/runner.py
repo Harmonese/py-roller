@@ -22,7 +22,7 @@ from pyroller.filter import build_filter_chain, get_filter_requirements
 from pyroller.parser import get_lyrics_parser
 from pyroller.parser.registry import get_parser_requirements
 from pyroller.progress import NullProgressReporter, ProgressReporter
-from pyroller.splitter import DemucsSplitter
+from pyroller.splitter import build_splitter, get_splitter_requirements
 from pyroller.transcriber import build_transcriber
 from pyroller.transcriber.registry import get_transcriber_requirements, resolve_transcriber_backend
 from pyroller.utils.ids import make_id
@@ -130,10 +130,10 @@ class ComposablePipelineRunner:
 
             if "splitter" in stages:
                 input_audio = self._require_audio_role(registry, "mixed_audio", "splitter")
-                splitter = DemucsSplitter(
+                splitter = build_splitter(
+                    backend_name=str(splitter_cfg.get("backend")) if splitter_cfg.get("backend") else None,
                     output_dir=request.intermediate_dir / "splitter",
-                    model=str(splitter_cfg.get("model", "htdemucs")),
-                    two_stems=str(splitter_cfg.get("two_stems", "vocals")),
+                    config=splitter_cfg,
                 )
                 split_artifact = splitter.split(input_audio.path, progress=self.progress_reporter)
                 if request.output_vocal_audio_path is not None:
@@ -362,8 +362,19 @@ class ComposablePipelineRunner:
         aligner_cfg = dict(request.backend_config.get("aligner", {}))
         writer_cfg = dict(request.backend_config.get("writer", {}))
 
-        if "splitter" not in stages and splitter_cfg.get("model") is not None:
-            raise ValueError("--splitter-demucs-model is only allowed when the selected stage chain includes 's'/'splitter'.")
+        if "splitter" not in stages:
+            splitter_flags = {
+                "backend": "--splitter-backend",
+                "model": "--splitter-demucs-model",
+                "device": "--splitter-demucs-device",
+                "jobs": "--splitter-demucs-jobs",
+                "overlap": "--splitter-demucs-overlap",
+                "segment": "--splitter-demucs-segment",
+            }
+            used = [flag for key, flag in splitter_flags.items() if key in splitter_cfg]
+            if used:
+                joined = ", ".join(used)
+                raise ValueError(f"{joined} {'is' if len(used) == 1 else 'are'} only allowed when the selected stage chain includes 's'/'splitter'.")
         if "filter" not in stages and "chain" in filter_cfg:
             raise ValueError("--filter-chain is only allowed when the selected stage chain includes 'f'/'filter'.")
         if "transcriber" not in stages:
@@ -453,7 +464,9 @@ class ComposablePipelineRunner:
         required_modules: dict[str, str] = {}
 
         if "splitter" in stages:
-            required_modules["demucs"] = "splitter backend demucs"
+            splitter_backend = str(request.backend_config.get("splitter", {}).get("backend") or "demucs")
+            for module_name in get_splitter_requirements(splitter_backend):
+                required_modules[module_name] = f"splitter backend {splitter_backend}"
 
         if "filter" in stages:
             for filter_name in request.backend_config.get("filter", {}).get("chain", []) or []:
