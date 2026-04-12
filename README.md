@@ -33,17 +33,37 @@ Core artifact types:
 
 ## Installation
 
-From source:
+From source, first install the lightweight base package:
 
 ```bash
-pip install .
+pip install -e .
 ```
 
-With audio backends and heavy model dependencies:
+Then let `py-roller` install the validated audio/transcriber runtime for your machine:
 
 ```bash
-pip install .[audio]
+py-roller install
 ```
+
+Profiles:
+
+- `auto` (default): choose the best validated profile for this machine, then automatically fall back to CPU if validation fails
+- `cpu`: official CPU-only stable profile
+- `cu124`: official CUDA 12.4 profile
+
+Useful variants:
+
+```bash
+py-roller install --profile cpu
+py-roller install --profile cu124
+py-roller install --dry-run
+py-roller doctor
+```
+
+Notes:
+
+- `py-roller install` still uses `pip` underneath, but it does **not** rely on pip to guess the correct Torch/Torchaudio flavor.
+- The command first installs the selected Torch profile, then installs the bundled `audio-core` runtime requirements with the matching constraints file, validates the resulting environment, and finally runs `py-roller doctor` unless you pass `--skip-doctor`.
 
 After installation, the CLI command is:
 
@@ -181,7 +201,7 @@ Default backend selection is language-aware. Please note that the default select
 ### Transcriber defaults
 
 - `zh` -> `mms_phonetic`
-- `en` -> `whisperx`
+- `en` -> `whisperx` (validated through the pinned `.[audio]` bundle)
 - `mul` -> `wav2vec2_phoneme`
 
 ### Parser defaults
@@ -197,6 +217,40 @@ Default backend selection is language-aware. Please note that the default select
 - language -> `mul`
 - `writer_spacing` -> keep
 - `cleanup` -> `on-success`
+- transcriber model store -> `~/.cache/py-roller/models/transcriber`
+
+## Transcriber model store and offline behavior
+
+Transcriber execution is local-only. `py-roller` does not send audio to a cloud transcription API.
+
+Model resolution follows this order:
+
+1. resolve `transcriber_model_name` (or the backend default model name)
+2. look for the model in the py-roller transcriber model store
+3. if not found and local-only mode is disabled, download or materialize it into the model store
+4. load the resolved local model path for inference
+
+Useful options:
+
+- `--transcriber-model-path`: choose the py-roller transcriber model store root
+- `--transcriber-model-name`: choose a model alias, model repo id, or an explicit local model path
+- `--transcriber-local-files-only`: refuse network access and read only from local files/cache
+
+`.[audio]` installs the project's official audio feature set. Its declared dependency chain is intentionally simple and follows the package-level dependencies from the reference v0.4.0 setup rather than a WhisperX-specific lock bundle.
+
+If WhisperX fails in Pyannote VAD checkpoint loading, treat that as an environment compatibility problem inside the installed audio stack rather than a model-store bug.
+
+Examples:
+
+```bash
+py-roller run   --stages t,p,a,w   --audio ./vocals.wav   --lyrics ./song.txt   --transcriber-model-path ./models/transcriber   --output-roller ./song.lrc
+```
+
+```bash
+py-roller run   --stages t,p,a,w   --audio ./vocals.wav   --lyrics ./song.txt   --transcriber-model-path ./models/transcriber   --transcriber-local-files-only   --output-roller ./song.lrc
+```
+
+If you are on a restricted network, pre-populate the model store and then rerun with `--transcriber-local-files-only`.
 
 ## Writer behavior
 
@@ -214,7 +268,7 @@ The default writer is `lrc_ms` which writes LRC lines with millisecond precision
 
 Current defaults:
 
-- structural / spacing lines are skipped by default
+- structural / spacing line output follows `writer_spacing` (`keep` by default)
 - display end time prefers matched unit timing instead of blindly extending to the next line
 - unmatched lines receive a short visible duration fallback
 
@@ -389,6 +443,8 @@ shared:
   intermediate: ./tmp/py-roller-artifacts
   cleanup: on-success
   transcriber_device: cpu
+  transcriber_model_path: ~/.cache/py-roller/models/transcriber
+  transcriber_local_files_only: false
   splitter_backend: demucs
   splitter_demucs_model: htdemucs
   splitter_demucs_device: cpu
@@ -436,3 +492,13 @@ Inspect candidates first with:
 ```bash
 ps -ef | grep -E 'pyroller|demucs'
 ```
+
+## Dependency policy
+
+`py-roller install` now prefers the newest validated dependency line instead of the older pre-2.6 Torch family. In practice this means:
+
+- Torch/TorchAudio/TorchVision are installed from the official 2.6.0 family for every built-in profile.
+- WhisperX environments pin `pyannote.audio==3.4.0`, because WhisperX users have reported that `pyannote.audio 4.x` breaks compatibility.
+- SOCKS-proxy support is installed by default through `httpx[socks]`, so Hugging Face downloads do not fail just because `socksio` is missing.
+
+If you upgrade or override these packages manually, run `py-roller doctor` before using WhisperX-heavy pipelines.

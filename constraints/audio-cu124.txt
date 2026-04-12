@@ -1,0 +1,5 @@
+# Official py-roller CUDA 12.4 audio profile.
+# Keep Torch on the validated pre-PyTorch-2.6 path.
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1

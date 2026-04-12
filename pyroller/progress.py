@@ -23,6 +23,9 @@ class StageProgress:
     def close(self, message: str | None = None) -> None:
         raise NotImplementedError
 
+    def fail(self, message: str | None = None) -> None:
+        raise NotImplementedError
+
 
 class ProgressReporter:
     def stage(self, name: str, *, total: int, unit: str = "step") -> StageProgress:
@@ -37,6 +40,9 @@ class NullStageProgress(StageProgress):
         return None
 
     def close(self, message: str | None = None) -> None:
+        return None
+
+    def fail(self, message: str | None = None) -> None:
         return None
 
 
@@ -72,6 +78,13 @@ class LoggingStageProgress(StageProgress):
         else:
             logger.info("%s complete", label)
 
+    def fail(self, message: str | None = None) -> None:
+        label = f"{self.prefix}{self.name}"
+        if message:
+            logger.error("%s failed - %s", label, message)
+        else:
+            logger.error("%s failed", label)
+
 
 class LoggingProgressReporter(ProgressReporter):
     def __init__(self, *, prefix: str = "") -> None:
@@ -101,6 +114,11 @@ class TqdmStageProgress(StageProgress):
         remaining = self.total - self._bar.n
         if remaining > 0:
             self._bar.update(remaining)
+        self._bar.close()
+
+    def fail(self, message: str | None = None) -> None:
+        if message:
+            self._bar.set_postfix_str(("FAILED: " + message)[:80], refresh=False)
         self._bar.close()
 
 

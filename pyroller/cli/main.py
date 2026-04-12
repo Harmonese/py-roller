@@ -14,6 +14,10 @@ def _default_intermediate_dir() -> Path:
     return Path(tempfile.gettempdir()) / "py-roller-artifacts"
 
 
+def _default_transcriber_model_path() -> Path:
+    return Path.home() / ".cache" / "py-roller" / "models" / "transcriber"
+
+
 def _build_subparser_description(*, batch_mode: bool) -> str:
     io_line = "All inputs/outputs are directories unless --manifest is used." if batch_mode else "All inputs/outputs are file paths."
     detail = (
@@ -65,7 +69,9 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     )
     stage_options.add_argument("--transcriber-backend", default=None, help="Optional transcriber backend override for the selected language")
     stage_options.add_argument("--transcriber-device", default=None, help="Inference device passed to supported transcriber backends")
-    stage_options.add_argument("--transcriber-model-name", default=None, help="Optional transcriber model override")
+    stage_options.add_argument("--transcriber-model-name", default=None, help="Optional transcriber model override or local model path")
+    stage_options.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="py-roller transcriber model store root. Models are read from or downloaded into this directory.")
+    stage_options.add_argument("--transcriber-local-files-only", action="store_true", default=None, help="Do not access remote model sources. Read only from the local py-roller transcriber model store or explicit local model paths.")
     stage_options.add_argument("--transcriber-compute-type", default=None, help="Optional WhisperX compute type override")
     stage_options.add_argument("--transcriber-batch-size", type=int, default=None, help="Optional WhisperX inference batch size override")
     stage_options.add_argument("--transcriber-no-align-words", action="store_true", default=None, help="Disable WhisperX word alignment")
@@ -146,6 +152,24 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
         formatter_class=formatter,
     )
     _add_shared_runlike_arguments(batch, batch_mode=True)
+
+    from pyroller.cli.install import build_install_parser as _build_install_parser
+    install_spec = _build_install_parser()
+    install = subparsers.add_parser(
+        "install",
+        help="Install the official py-roller audio environment for this machine.",
+        description=install_spec.description,
+        formatter_class=formatter,
+        parents=[install_spec],
+        add_help=False,
+    )
+
+    subparsers.add_parser(
+        "doctor",
+        help="Inspect the local audio/transcriber environment and suggest repairs.",
+        description="Check whether torch, torchaudio, WhisperX, pyannote.audio, demucs, and librosa import successfully in the current environment.",
+        formatter_class=formatter,
+    )
     return parser, run, batch
 
 
@@ -192,6 +216,10 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
         transcriber_cfg["backend"] = args.transcriber_backend
     if args.transcriber_model_name is not None:
         transcriber_cfg["model_name"] = args.transcriber_model_name
+    if args.transcriber_model_path is not None and Path(args.transcriber_model_path) != _default_transcriber_model_path():
+        transcriber_cfg["model_path"] = args.transcriber_model_path
+    if args.transcriber_local_files_only is not None:
+        transcriber_cfg["local_files_only"] = args.transcriber_local_files_only
     if args.transcriber_device is not None:
         transcriber_cfg["device"] = args.transcriber_device
     if args.transcriber_compute_type is not None:
@@ -326,7 +354,11 @@ def _execute_run(request) -> None:
     effective_request = _prepare_single_run_request(request)
     log_file = batch_task_log_file(effective_request.intermediate_dir)
     configure_logging(level=effective_request.log_level, log_file=log_file)
-    result = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter()).run(effective_request)
+    runner = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter())
+    try:
+        result = runner.run(effective_request)
+    finally:
+        runner.close()
     _print_run_summary(result, effective_request)
 
 
@@ -415,6 +447,13 @@ def main() -> None:
             config = load_cli_config(config_path)
             apply_cli_config_defaults(run_parser=run_parser, batch_parser=batch_parser, config=config)
         args = parser.parse_args(raw_argv)
+        if args.command == "doctor":
+            from pyroller.cli.doctor import run_doctor
+            raise SystemExit(run_doctor())
+        if args.command == "install":
+            from pyroller.cli.install import run_install_command
+            raise SystemExit(run_install_command(args))
+
         request = _build_request(args)
         if args.command == "run":
             _execute_run(request)
@@ -427,7 +466,11 @@ def main() -> None:
         print("[ERROR] interrupted by user", file=sys.stderr)
         raise SystemExit(130)
     except Exception as exc:
-        logging.getLogger("pyroller.cli").error("Pipeline command failed: %s", exc)
+        cli_logger = logging.getLogger("pyroller.cli")
+        if cli_logger.isEnabledFor(logging.DEBUG):
+            cli_logger.exception("Pipeline command failed")
+        else:
+            cli_logger.error("Pipeline command failed: %s", exc)
         print(f"[ERROR] {exc}", file=sys.stderr)
         raise SystemExit(1)
 

@@ -23,6 +23,8 @@ _SHARED_ALLOWED_KEYS = {
     "log_level",
     "transcriber_device",
     "transcriber_model_name",
+    "transcriber_model_path",
+    "transcriber_local_files_only",
     "transcriber_compute_type",
     "transcriber_batch_size",
     "transcriber_no_align_words",
@@ -140,7 +142,7 @@ def _validate_section_keys(sections: dict[str, dict[str, Any]]) -> None:
 def _coerce_values(values: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in values.items():
-        if key == "intermediate" and value is not None:
+        if key in {"intermediate", "transcriber_model_path"} and value is not None:
             out[key] = Path(str(value))
         elif key == "filter_chain" and isinstance(value, list):
             out[key] = [str(item) for item in value]

@@ -21,10 +21,11 @@ from pyroller.domain import (
 from pyroller.filter import build_filter_chain, get_filter_requirements
 from pyroller.parser import get_lyrics_parser
 from pyroller.parser.registry import get_parser_requirements
+from pyroller.pipeline.execution_context import PipelineExecutionContext
 from pyroller.progress import NullProgressReporter, ProgressReporter
 from pyroller.splitter import build_splitter, get_splitter_requirements
-from pyroller.transcriber import build_transcriber
 from pyroller.transcriber.registry import get_transcriber_requirements, resolve_transcriber_backend
+from pyroller.utils.text import summarize_zh_router_routes
 from pyroller.utils.ids import make_id
 from pyroller.writer import build_writer
 
@@ -65,8 +66,16 @@ _LYRICS_ENCODING_ALIASES = {
 
 
 class ComposablePipelineRunner:
-    def __init__(self, progress_reporter: ProgressReporter | None = None) -> None:
+    def __init__(
+        self,
+        progress_reporter: ProgressReporter | None = None,
+        execution_context: PipelineExecutionContext | None = None,
+    ) -> None:
         self.progress_reporter = progress_reporter or NullProgressReporter()
+        self.execution_context = execution_context or PipelineExecutionContext()
+
+    def close(self) -> None:
+        self.execution_context.close()
 
     def run(self, request: PipelineRequest) -> RunPipelineResult:
         stages = self._resolve_execution_plan(request)
@@ -174,11 +183,7 @@ class ComposablePipelineRunner:
 
             if "transcriber" in stages:
                 input_audio = self._require_audio_input(registry, "transcriber")
-                transcriber = build_transcriber(
-                    language=effective_language,
-                    backend_name=str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
-                    config=transcriber_cfg,
-                )
+                transcriber = self._get_transcriber(effective_language, transcriber_cfg)
                 transcription = transcriber.transcribe(input_audio, language=effective_language, tone_mode="ignore", progress=self.progress_reporter)
                 registry["timed_units"] = transcription
                 result.transcription = transcription
@@ -198,16 +203,6 @@ class ComposablePipelineRunner:
                     parsed_lyrics.save(request.output_parsed_lyrics_path)
                     logger.info("Wrote parsed_lyrics artifact to %s", request.output_parsed_lyrics_path)
                 result.executed_stages.append("parser")
-                if (
-                    effective_language == "zh"
-                    and result.transcription is not None
-                    and getattr(result.transcription, "backend", "") == "whisperx"
-                    and int(parsed_lyrics.metadata.get("foreign_segment_count", 0)) > 0
-                ):
-                    logger.warning(
-                        "zh_router_pinyin detected %d foreign/digit segments, but transcription backend=whisperx may drop non-Chinese text. Consider backend=mms_phonetic for mixed zh lyrics.",
-                        int(parsed_lyrics.metadata.get("foreign_segment_count", 0)),
-                    )
                 logger.info("Stage parser complete -> %d lines", len(parsed_lyrics.lines))
 
             if "aligner" in stages:
@@ -382,6 +377,8 @@ class ComposablePipelineRunner:
                 "backend": "--transcriber-backend",
                 "device": "--transcriber-device",
                 "model_name": "--transcriber-model-name",
+                "model_path": "--transcriber-model-path",
+                "local_files_only": "--transcriber-local-files-only",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
                 "align_words": "--transcriber-no-align-words",
@@ -460,6 +457,15 @@ class ComposablePipelineRunner:
         joined = ", ".join(missing)
         return f"Stage '{stage}' is missing required input artifact(s): {joined}. Provide them explicitly or add the producing stage(s)."
 
+
+    def _get_transcriber(self, language: str, config: dict[str, Any]):
+        backend_name = str(config.get("backend")) if config.get("backend") else None
+        return self.execution_context.get_transcriber(
+            language=language,
+            backend_name=backend_name,
+            config=config,
+        )
+
     def _preflight_environment(self, request: PipelineRequest, stages: list[str], effective_language: str) -> None:
         required_modules: dict[str, str] = {}
 
@@ -496,6 +502,32 @@ class ComposablePipelineRunner:
             message = "Preflight dependency check failed. Missing module(s): " + ", ".join(sorted(missing))
             logger.error(message)
             raise RuntimeError(message)
+
+        if "transcriber" in stages:
+            transcriber_cfg = dict(request.backend_config.get("transcriber", {}))
+            _, transcriber_backend = resolve_transcriber_backend(
+                effective_language,
+                str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
+            )
+            logger.info("Running transcriber preflight for backend=%s language=%s", transcriber_backend, effective_language)
+            preflight_stage = self.progress_reporter.stage("transcriber-preflight", total=3, unit="phase")
+            preflight_failed = True
+            preflight_failure_message = "preflight failed"
+            try:
+                preflight_stage.phase("loading transcriber backend")
+                transcriber = self._get_transcriber(effective_language, transcriber_cfg)
+                preflight_report = transcriber.preflight(effective_language, stage=preflight_stage)
+                self._warn_preflight_for_mixed_zh_lyrics(request, effective_language, transcriber_backend)
+                logger.info("Transcriber preflight passed: %s", json.dumps(preflight_report, ensure_ascii=False))
+                preflight_failed = False
+            except Exception as exc:
+                preflight_failure_message = f"preflight failed: {exc.__class__.__name__}: {exc}"
+                raise
+            finally:
+                if preflight_failed:
+                    preflight_stage.fail(preflight_failure_message)
+                else:
+                    preflight_stage.close("preflight complete")
 
     def _ensure_intermediate_dir_ownership(self, request: PipelineRequest, stages: list[str]) -> None:
         request.intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -571,6 +603,50 @@ class ComposablePipelineRunner:
                 f"{requested_encoding!r}. Supported values: auto, utf-8, utf-8-sig, utf-16, gbk, gb18030, shift-jis."
             )
         return normalized
+
+    def _warn_preflight_for_mixed_zh_lyrics(self, request: PipelineRequest, effective_language: str, transcriber_backend: str) -> None:
+        if effective_language != "zh" or transcriber_backend != "whisperx" or request.lyrics_path is None:
+            return
+
+        try:
+            normalized_request = self._normalize_lyrics_encoding(request.parser_lyrics_encoding)
+            raw_text, used_encoding = self._read_lyrics_text(request.lyrics_path, normalized_request)
+        except Exception as exc:
+            logger.warning(
+                "Unable to inspect lyrics during transcriber preflight for zh mixed-text warning: %s: %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+
+        try:
+            foreign_segments = 0
+            affected_lines = 0
+            for raw_line in raw_text.splitlines():
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                summary = summarize_zh_router_routes(stripped, tone_mode="ignore")
+                line_foreign_segments = int(summary.get("foreign_segment_count", 0))
+                if line_foreign_segments > 0:
+                    affected_lines += 1
+                    foreign_segments += line_foreign_segments
+        except Exception as exc:
+            logger.warning(
+                "Unable to analyze zh lyrics routing during transcriber preflight mixed-text check: %s: %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+
+        if foreign_segments > 0:
+            logger.warning(
+                "Preflight detected %d foreign/digit lyric segments across %d line(s) from %s (encoding=%s). Transcriber backend=whisperx may drop non-Chinese text after normalization. Consider backend=mms_phonetic for mixed zh lyrics.",
+                foreign_segments,
+                affected_lines,
+                request.lyrics_path,
+                used_encoding,
+            )
 
     def _read_lyrics_text(self, lyrics_path: Path, requested_encoding: str) -> tuple[str, str]:
         if requested_encoding != "auto":

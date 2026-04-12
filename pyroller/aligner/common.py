@@ -14,6 +14,28 @@ logger = logging.getLogger("pyroller.aligner")
 class SequenceAlignmentSupport:
     strategy_name = "sequence_alignment"
 
+    def _segment_start(self, segment: dict[str, Any]) -> float | None:
+        for key in ("start", "start_time"):
+            value = segment.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _segment_end(self, segment: dict[str, Any]) -> float | None:
+        for key in ("end", "end_time"):
+            value = segment.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
     def _estimate_alignment_window(
         self,
         transcription: TranscriptionResult,
@@ -27,12 +49,12 @@ class SequenceAlignmentSupport:
             end_candidates.append(float(global_units[-1]["end_time"]))
 
         if transcription.raw_segments:
-            first_segment_start = transcription.raw_segments[0].get("start")
+            first_segment_start = self._segment_start(transcription.raw_segments[0])
             if first_segment_start is not None:
-                start_time = float(first_segment_start)
-            segment_end = transcription.raw_segments[-1].get("end")
+                start_time = first_segment_start
+            segment_end = self._segment_end(transcription.raw_segments[-1])
             if segment_end is not None:
-                end_candidates.append(float(segment_end))
+                end_candidates.append(segment_end)
 
         metadata_duration = transcription.metadata.get("audio_duration")
         if metadata_duration is not None:
@@ -50,6 +72,9 @@ class SequenceAlignmentSupport:
         global_units: list[dict[str, Any]] = []
         for idx, unit in enumerate(transcription.units):
             seg_idx = unit.metadata.get("source_segment_index")
+            if not isinstance(seg_idx, int):
+                legacy_seg_idx = unit.metadata.get("sequence_index")
+                seg_idx = legacy_seg_idx if isinstance(legacy_seg_idx, int) else -1
             global_units.append(
                 {
                     "pos": len(global_units),
