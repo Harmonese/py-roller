@@ -12,3 +12,4 @@ testdata/
 testdata_intermediate/
 testdata_out/
 models/
+*.pyc
