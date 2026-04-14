@@ -46,9 +46,16 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         self.trust_remote_code = trust_remote_code
         self._prepared: _PreparedWav2Vec2Bundle | None = None
 
-    @property
-    def transcribe_phase_total(self) -> int:
-        return 6
+    def _prepare_phase_count(self, language: str) -> int:
+        if self._is_prepared_for(language):
+            return 1
+        return 2
+
+    def preflight_phase_total(self, language: str) -> int:
+        return self._prepare_phase_count(language)
+
+    def transcribe_phase_total(self, language: str) -> int:
+        return 1 + self._prepare_phase_count(language) + 2
 
     def _build_resolution_plan(self, language: str, *, materialize: bool, stage=None):
         from pyroller.transcriber.model_resolver import TranscriberModelResolver

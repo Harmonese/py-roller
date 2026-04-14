@@ -29,6 +29,8 @@ class TranscriberEngine(ABC):
     def close(self) -> None:
         return None
 
-    @property
-    def transcribe_phase_total(self) -> int:
+    def preflight_phase_total(self, language: str) -> int:
+        return 1
+
+    def transcribe_phase_total(self, language: str) -> int:
         return 5

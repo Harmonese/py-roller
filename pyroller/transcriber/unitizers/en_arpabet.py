@@ -62,13 +62,13 @@ class EnArpabetUnitizer(TranscriptionAdapter):
                         normalized_text=normalized,
                         timing_mode="interpolated_from_word" if span.level == "word" else "interpolated_from_segment",
                         extra={
-                            "engine": "whisperx",
+                            "engine": self.backend,
                             "engine_span_id": span.span_id,
                             "chunk_prefix": span.span_id.replace(":", "_"),
                             "source_word": phone.get("source_word"),
                             "timing_is_interpolated": True,
                             "timing_is_acoustic": False,
-                            "timing_basis": "whisperx_word_span" if span.level == "word" else "whisperx_segment_span",
+                            "timing_basis": f"{self.backend}_word_span" if span.level == "word" else f"{self.backend}_segment_span",
                         },
                     ),
                 )

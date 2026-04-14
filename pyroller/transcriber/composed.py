@@ -16,6 +16,12 @@ class ComposedTranscriber(Transcriber):
     def preflight(self, language: str, stage=None) -> dict[str, object]:
         return self.engine.preflight(language, stage=stage)
 
+    def preflight_phase_total(self, language: str) -> int:
+        return self.engine.preflight_phase_total(language)
+
+    def transcribe_phase_total(self, language: str) -> int:
+        return self.engine.transcribe_phase_total(language)
+
     def close(self) -> None:
         self.engine.close()
 
@@ -26,7 +32,7 @@ class ComposedTranscriber(Transcriber):
         tone_mode: str,
         progress: ProgressReporter | None = None,
     ) -> TranscriptionResult:
-        stage = progress.stage("transcriber", total=self.engine.transcribe_phase_total, unit="phase") if progress is not None else None
+        stage = progress.stage("transcriber", total=self.engine.transcribe_phase_total(language), unit="phase") if progress is not None else None
         stage_failed = False
         stage_failure_message = "transcriber failed"
         try:

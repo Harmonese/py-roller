@@ -62,10 +62,14 @@ def get_transcriber_requirements(backend_name: str) -> tuple[str, ...]:
     return ()
 
 
+def get_transcriber_config_keys(backend_name: str) -> frozenset[str]:
+    return next((spec.config_keys for (_, spec_backend), spec in TRANSCRIBER_SPECS.items() if spec_backend == backend_name), frozenset())
+
+
 def sanitize_transcriber_config(backend_name: str, config: dict[str, Any] | None) -> dict[str, Any]:
     init_config = {key: value for key, value in dict(config or {}).items() if value is not None}
     init_config.pop("backend", None)
-    accepted = next((spec.config_keys for (_, spec_backend), spec in TRANSCRIBER_SPECS.items() if spec_backend == backend_name), frozenset())
+    accepted = get_transcriber_config_keys(backend_name)
     filtered = {key: value for key, value in init_config.items() if key in accepted}
     ignored = sorted(set(init_config) - set(accepted))
     if ignored:

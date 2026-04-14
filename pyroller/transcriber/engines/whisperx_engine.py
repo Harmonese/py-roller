@@ -45,9 +45,16 @@ class WhisperXEngine(TranscriberEngine):
         self.align_words = align_words
         self._prepared: _PreparedWhisperXBundle | None = None
 
-    @property
-    def transcribe_phase_total(self) -> int:
-        return 6 if self.align_words else 5
+    def _prepare_phase_count(self, language: str) -> int:
+        if self._is_prepared_for(language):
+            return 1
+        return 3 if self.align_words else 2
+
+    def preflight_phase_total(self, language: str) -> int:
+        return self._prepare_phase_count(language)
+
+    def transcribe_phase_total(self, language: str) -> int:
+        return 1 + self._prepare_phase_count(language) + 2 + (1 if self.align_words else 0)
 
     def _build_resolution_plan(self, language: str, *, materialize: bool, stage=None):
         from pyroller.transcriber.model_resolver import TranscriberModelResolver

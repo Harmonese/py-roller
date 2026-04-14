@@ -16,6 +16,7 @@ _DEFAULT_MODEL_NAME_BY_BACKEND = {
     "mms_phonetic": "Chuatury/wav2vec2-mms-1b-cmn-phonetic",
     "wav2vec2_phoneme": "facebook/wav2vec2-lv-60-espeak-cv-ft",
     "whisperx": "large-v2",
+    "faster_whisper": "large-v2",
 }
 
 
@@ -130,6 +131,8 @@ class TranscriberModelResolver:
             return self._resolve_hf_snapshot(effective_model_name, materialize=materialize, stage=stage)
         if self.backend == "whisperx":
             return self._resolve_whisperx_model(effective_model_name, materialize=materialize, stage=stage)
+        if self.backend == "faster_whisper":
+            return self._resolve_faster_whisper_model(effective_model_name, materialize=materialize, stage=stage)
         raise ValueError(f"Unsupported transcriber backend for model resolution: {self.backend!r}")
 
     def _resolve_hf_snapshot(self, model_name: str, *, materialize: bool, stage: StageProgress | None = None) -> TranscriberResolutionPlan:
@@ -246,6 +249,68 @@ class TranscriberModelResolver:
             plan.validations.append("would resolve WhisperX ASR snapshot on demand")
         self._write_manifest(plan)
         return plan
+
+
+    def _resolve_faster_whisper_model(self, model_name: str, *, materialize: bool, stage: StageProgress | None = None) -> TranscriberResolutionPlan:
+        provider_cache_root = self.model_store_root / "providers" / "faster_whisper" / "hub"
+        provider_cache_root.mkdir(parents=True, exist_ok=True)
+        plan = TranscriberResolutionPlan(
+            backend=self.backend,
+            language=self.language,
+            requested_model_name=self.requested_model_name,
+            effective_model_name=model_name,
+            model_store_root=self.model_store_root,
+            provider="faster_whisper",
+            provider_kind="faster_whisper",
+            local_files_only=self.local_files_only,
+            network_required=not self.local_files_only,
+            network_allowed=not self.local_files_only,
+            network_reason=(None if self.local_files_only else "resolve or download faster-whisper CTranslate2 snapshot"),
+            provider_cache_root=provider_cache_root,
+            download_root=provider_cache_root,
+        )
+        repo_id = self._resolve_faster_whisper_repo_id(model_name)
+        existing = self._read_manifest_entry(self.backend, model_name)
+        existing_dir = Path(existing.get("resolved_model_dir")).resolve() if existing and existing.get("resolved_model_dir") else None
+        if existing_dir is not None and existing_dir.exists():
+            plan.resolved_model_dir = existing_dir
+            plan.network_required = False
+            plan.validations.append("reused resolved faster-whisper snapshot already present in py-roller model store")
+            self._write_manifest(plan)
+            return plan
+
+        if materialize:
+            from pyroller.transcriber.download_logging import snapshot_download_with_logging
+
+            try:
+                snapshot_dir = Path(
+                    snapshot_download_with_logging(
+                        repo_id=repo_id,
+                        cache_dir=provider_cache_root,
+                        local_files_only=self.local_files_only,
+                        log_label=f"faster-whisper ASR model {repo_id}",
+                        stage=stage,
+                    )
+                ).resolve()
+            except Exception as exc:
+                guidance = (
+                    f"Unable to resolve faster-whisper ASR model {repo_id!r} into the local py-roller model store at {provider_cache_root}. "
+                    f"If you are on a restricted network, pre-download the model into {self.model_store_root} or pass --transcriber-local-files-only once the cache is ready."
+                )
+                raise RuntimeError(guidance) from exc
+            plan.resolved_model_dir = snapshot_dir
+            plan.network_required = False
+            plan.validations.append("resolved faster-whisper snapshot into local py-roller model store")
+        else:
+            plan.validations.append("would resolve faster-whisper snapshot on demand")
+        self._write_manifest(plan)
+        return plan
+
+
+    def _resolve_faster_whisper_repo_id(self, model_name: str) -> str:
+        if "/" in model_name or "\\" in model_name:
+            return model_name
+        return f"Systran/faster-whisper-{model_name}"
 
     def _resolve_whisperx_repo_id(self, model_name: str) -> str:
         if "/" in model_name or "\\" in model_name:

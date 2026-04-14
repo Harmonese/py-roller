@@ -201,7 +201,9 @@ Default backend selection is language-aware. Please note that the default select
 ### Transcriber defaults
 
 - `zh` -> `mms_phonetic`
-- `en` -> `whisperx` (validated through the pinned `.[audio]` bundle)
+- `en` -> `whisperx` (validated through the pinned `audio-core` bundle)
+
+English also supports `--transcriber-backend faster_whisper` for a lighter native CTranslate2 Whisper path when you prefer faster startup and built-in word timestamps over WhisperX forced alignment.
 - `mul` -> `wav2vec2_phoneme`
 
 ### Parser defaults
@@ -234,9 +236,10 @@ Useful options:
 
 - `--transcriber-model-path`: choose the py-roller transcriber model store root
 - `--transcriber-model-name`: choose a model alias, model repo id, or an explicit local model path
+  - for `whisperx` and `faster_whisper`, bare aliases like `large-v2`, `large-v3`, or `turbo` resolve to `Systran/faster-whisper-*` snapshots
 - `--transcriber-local-files-only`: refuse network access and read only from local files/cache
 
-`.[audio]` installs the project's official audio feature set. Its declared dependency chain is intentionally simple and follows the package-level dependencies from the reference v0.4.0 setup rather than a WhisperX-specific lock bundle.
+`audio-core` installs the project's official audio feature set. Its declared dependency chain is intentionally simple and follows the package-level dependencies from the reference v0.4.0 setup rather than a WhisperX-specific lock bundle.
 
 If WhisperX fails in Pyannote VAD checkpoint loading, treat that as an environment compatibility problem inside the installed audio stack rather than a model-store bug.
 

@@ -133,6 +133,8 @@ def run_doctor() -> int:
         _check_torch(),
         _check_torchaudio(),
         _check_module("whisperx", "py-roller install"),
+        _check_module("faster_whisper", "py-roller install"),
+        _check_module("ctranslate2", "py-roller install"),
         _check_module("transformers", "py-roller install"),
         _check_module("pyannote.audio", "py-roller install"),
         _check_pyannote_pin(),

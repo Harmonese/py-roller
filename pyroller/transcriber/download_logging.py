@@ -22,7 +22,7 @@ def snapshot_download_with_logging(
         from huggingface_hub import snapshot_download  # type: ignore
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError(
-            "huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio]"
+            "huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio-core]"
         ) from exc
 
     cache_dir = str(Path(cache_dir))

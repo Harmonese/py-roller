@@ -8,11 +8,17 @@ from pyroller.progress import ProgressReporter, StageProgress
 
 class Transcriber(ABC):
     name = "transcriber"
-    accepts = ("mixed_audio", "vocal_audio", "filtered_vocal_audio")
+    accepts = ("filtered_vocal_audio",)
     produces = "timed_units"
 
     def preflight(self, language: str, stage: StageProgress | None = None) -> dict[str, object]:
         return {}
+
+    def preflight_phase_total(self, language: str) -> int:
+        return 0
+
+    def transcribe_phase_total(self, language: str) -> int:
+        return 0
 
     def close(self) -> None:
         return None

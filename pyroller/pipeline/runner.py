@@ -24,7 +24,7 @@ from pyroller.parser.registry import get_parser_requirements
 from pyroller.pipeline.execution_context import PipelineExecutionContext
 from pyroller.progress import NullProgressReporter, ProgressReporter
 from pyroller.splitter import build_splitter, get_splitter_requirements
-from pyroller.transcriber.registry import get_transcriber_requirements, resolve_transcriber_backend
+from pyroller.transcriber.registry import get_transcriber_config_keys, get_transcriber_requirements, resolve_transcriber_backend
 from pyroller.utils.text import summarize_zh_router_routes
 from pyroller.utils.ids import make_id
 from pyroller.writer import build_writer
@@ -406,6 +406,33 @@ class ComposablePipelineRunner:
             if used:
                 joined = ", ".join(used)
                 raise ValueError(f"{joined} {'is' if len(used) == 1 else 'are'} only allowed when the selected stage chain includes 'w'/'writer'.")
+        if "transcriber" in stages:
+            _, chosen_transcriber_backend = resolve_transcriber_backend(
+                self._resolve_language(request.language),
+                str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
+            )
+            transcriber_flags = {
+                "backend": "--transcriber-backend",
+                "device": "--transcriber-device",
+                "model_name": "--transcriber-model-name",
+                "model_path": "--transcriber-model-path",
+                "local_files_only": "--transcriber-local-files-only",
+                "compute_type": "--transcriber-compute-type",
+                "batch_size": "--transcriber-batch-size",
+                "align_words": "--transcriber-no-align-words",
+            }
+            accepted_transcriber_keys = get_transcriber_config_keys(chosen_transcriber_backend)
+            incompatible = [
+                transcriber_flags[key]
+                for key in transcriber_flags
+                if key != "backend" and key in transcriber_cfg and key not in accepted_transcriber_keys
+            ]
+            if incompatible:
+                joined = ", ".join(incompatible)
+                raise ValueError(
+                    f"{joined} {'is' if len(incompatible) == 1 else 'are'} not supported by --transcriber-backend {chosen_transcriber_backend!r}."
+                )
+
         if "writer" in stages:
             chosen_writer_backend = str(writer_cfg.get("backend") or "lrc_ms")
             if writer_cfg.get("tag_type") is not None and chosen_writer_backend != "ass_karaoke":
@@ -437,9 +464,9 @@ class ComposablePipelineRunner:
         if stage == "splitter":
             return [] if "mixed_audio" in available else ["mixed_audio"]
         if stage == "filter":
-            return [] if {"mixed_audio", "vocal_audio", "filtered_vocal_audio"}.intersection(available) else ["audio_input"]
+            return [] if "vocal_audio" in available else ["vocal_audio"]
         if stage == "transcriber":
-            return [] if {"mixed_audio", "vocal_audio", "filtered_vocal_audio"}.intersection(available) else ["audio_input"]
+            return [] if "filtered_vocal_audio" in available else ["filtered_vocal_audio"]
         if stage == "parser":
             return [] if "lyrics_text" in available else ["lyrics_text"]
         if stage == "aligner":
@@ -509,13 +536,17 @@ class ComposablePipelineRunner:
                 effective_language,
                 str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
             )
+            transcriber = self._get_transcriber(effective_language, transcriber_cfg)
             logger.info("Running transcriber preflight for backend=%s language=%s", transcriber_backend, effective_language)
-            preflight_stage = self.progress_reporter.stage("transcriber-preflight", total=3, unit="phase")
+            preflight_stage = self.progress_reporter.stage(
+                "transcriber-preflight",
+                total=1 + transcriber.preflight_phase_total(effective_language),
+                unit="phase",
+            )
             preflight_failed = True
             preflight_failure_message = "preflight failed"
             try:
                 preflight_stage.phase("loading transcriber backend")
-                transcriber = self._get_transcriber(effective_language, transcriber_cfg)
                 preflight_report = transcriber.preflight(effective_language, stage=preflight_stage)
                 self._warn_preflight_for_mixed_zh_lyrics(request, effective_language, transcriber_backend)
                 logger.info("Transcriber preflight passed: %s", json.dumps(preflight_report, ensure_ascii=False))

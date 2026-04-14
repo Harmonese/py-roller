@@ -8,7 +8,7 @@ from pyroller.domain import AudioArtifact
 
 class AudioFilter(ABC):
     name = "filter"
-    accepts = ("mixed_audio", "vocal_audio", "filtered_vocal_audio")
+    accepts = ("vocal_audio",)
     produces = "filtered_vocal_audio"
 
     @abstractmethod
