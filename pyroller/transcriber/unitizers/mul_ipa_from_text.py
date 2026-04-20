@@ -6,11 +6,11 @@ from pyroller.transcriber.protocol import build_unit_trace_metadata
 from pyroller.transcriber.unitizers.base import TranscriptionAdapter
 from pyroller.transcriber.unitizers.common import preferred_text_spans
 from pyroller.utils.ids import make_id
-from pyroller.utils.text import english_text_to_arpabet_units, normalize_english_text
+from pyroller.utils.text import multilingual_text_to_ipa_units
 
 
-class EnArpabetUnitizer(TranscriptionAdapter):
-    name = "en_arpabet"
+class MulIpaFromTextUnitizer(TranscriptionAdapter):
+    name = "mul_ipa_from_text"
     unit_timing_semantics = "interpolated_non_acoustic"
 
     def __init__(self, *, backend: str = "faster_whisper") -> None:
@@ -24,8 +24,7 @@ class EnArpabetUnitizer(TranscriptionAdapter):
 
     def _text_span_to_units(self, span: EngineSpan, *, language: str) -> list[TimedUnit]:
         text = span.text or ""
-        normalized = normalize_english_text(text)
-        phones = english_text_to_arpabet_units(text)
+        phones = multilingual_text_to_ipa_units(text)
         if not phones:
             return []
 
@@ -36,21 +35,25 @@ class EnArpabetUnitizer(TranscriptionAdapter):
         step = duration / count if count > 0 else 0.0
         units: list[TimedUnit] = []
         for idx, phone in enumerate(phones):
+            symbol = str(phone.get("symbol") or phone.get("normalized_symbol") or "").strip()
+            normalized = str(phone.get("normalized_symbol") or phone.get("symbol") or symbol).strip()
+            if not symbol or not normalized:
+                continue
             unit_start = start + (idx * step)
             unit_end = end if idx == count - 1 else start + ((idx + 1) * step)
             units.append(
                 TimedUnit(
                     unit_id=make_id("timed_unit"),
-                    symbol=phone["symbol"] or phone["normalized_symbol"],
-                    normalized_symbol=phone["normalized_symbol"] or phone["symbol"],
-                    unit_type="arpabet_phone",
+                    symbol=symbol,
+                    normalized_symbol=normalized,
+                    unit_type="ipa_phone",
                     language=language,
                     tone=phone.get("stress"),
                     start_time=unit_start,
                     end_time=unit_end,
                     confidence=float(span.confidence) if span.confidence is not None else None,
                     source_backend=self.backend,
-                    raw_tokens=[phone["symbol"]],
+                    raw_tokens=[str(phone.get("source_word") or symbol)],
                     metadata=build_unit_trace_metadata(
                         backend=self.backend,
                         source_segment_index=span.segment_index if span.segment_index is not None else 0,
@@ -59,16 +62,20 @@ class EnArpabetUnitizer(TranscriptionAdapter):
                         source_start_time=start,
                         source_end_time=end,
                         source_text=text,
-                        normalized_text=normalized,
+                        normalized_text=span.normalized_text or span.text,
                         timing_mode="interpolated_from_word" if span.level == "word" else "interpolated_from_segment",
                         extra={
                             "engine": self.backend,
                             "engine_span_id": span.span_id,
                             "chunk_prefix": span.span_id.replace(":", "_"),
-                            "source_word": phone.get("source_word"),
                             "timing_is_interpolated": True,
                             "timing_is_acoustic": False,
                             "timing_basis": f"{self.backend}_word_span" if span.level == "word" else f"{self.backend}_segment_span",
+                            "source_language": phone.get("source_language"),
+                            "segment_language": phone.get("segment_language"),
+                            "segment_text": phone.get("segment_text"),
+                            "route_backend": phone.get("backend"),
+                            "source_word": phone.get("source_word"),
                         },
                     ),
                 )

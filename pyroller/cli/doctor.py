@@ -8,7 +8,6 @@ import sys
 from dataclasses import dataclass
 
 MIN_TORCH = (2, 6, 0)
-MAX_PYANNOTE_MAJOR = 3
 SOCKS_ENV_KEYS = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy")
 
 
@@ -81,7 +80,7 @@ def _check_torch() -> CheckResult:
     parsed = _parse_version_tuple(torch.__version__)
     if parsed is None or parsed < MIN_TORCH:
         status = "fail"
-        message += f" | too old for current WhisperX/Transformers alignment loading; reinstall with: py-roller install"
+        message += f" | too old for the current transcriber stack; reinstall with: py-roller install"
     return CheckResult("torch", status, message)
 
 
@@ -106,16 +105,6 @@ def _check_module(name: str, install_hint: str) -> CheckResult:
         return CheckResult(name, "fail", f"{_format_exception(exc)} | Install/repair with: {install_hint}")
 
 
-def _check_pyannote_pin() -> CheckResult:
-    version = _dist_version("pyannote.audio")
-    if version is None:
-        return CheckResult("pyannote-pin", "fail", "pyannote.audio is not installed | Install/repair with: py-roller install")
-    parsed = _parse_version_tuple(version)
-    if parsed is not None and parsed[0] > MAX_PYANNOTE_MAJOR:
-        return CheckResult("pyannote-pin", "fail", f"pyannote.audio {version} is outside the validated WhisperX range (<4.0); reinstall with: py-roller install")
-    return CheckResult("pyannote-pin", "ok", f"pyannote.audio {version} is within the validated WhisperX range")
-
-
 def _check_proxy_support() -> CheckResult:
     uses_socks = any("socks" in os.environ.get(key, "").lower() for key in SOCKS_ENV_KEYS)
     if not uses_socks:
@@ -132,12 +121,9 @@ def run_doctor() -> int:
         _check_python(),
         _check_torch(),
         _check_torchaudio(),
-        _check_module("whisperx", "py-roller install"),
         _check_module("faster_whisper", "py-roller install"),
         _check_module("ctranslate2", "py-roller install"),
         _check_module("transformers", "py-roller install"),
-        _check_module("pyannote.audio", "py-roller install"),
-        _check_pyannote_pin(),
         _check_proxy_support(),
         _check_module("demucs", "py-roller install"),
         _check_module("librosa", "py-roller install"),

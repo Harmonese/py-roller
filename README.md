@@ -2,7 +2,7 @@
 
 `py-roller` is a CLI Solution for automatic rolling lyrics generating.
 
-To be specific, `py-roller` is a composable lyric-audio alignment pipeline CLI for staged execution, batch processing, and LRC/ASS export. Designed to support multiple transcriber back-ends including WhisperX and wav2vec2.
+To be specific, `py-roller` is a composable lyric-audio alignment pipeline CLI for staged execution, batch processing, and LRC/ASS export. Designed to support multiple local transcriber back-ends including faster-whisper and wav2vec2.
 
 - Package name: `py-roller`
 - CLI command: `py-roller`
@@ -200,11 +200,14 @@ Default backend selection is language-aware. Please note that the default select
 
 ### Transcriber defaults
 
-- `zh` -> `mms_phonetic`
-- `en` -> `whisperx` (validated through the pinned `audio-core` bundle)
+- `zh` -> `faster_whisper`
+- `en` -> `faster_whisper`
+- `mul` -> `faster_whisper`
 
-English also supports `--transcriber-backend faster_whisper` for a lighter native CTranslate2 Whisper path when you prefer faster startup and built-in word timestamps over WhisperX forced alignment.
-- `mul` -> `wav2vec2_phoneme`
+Optional transcriber backends:
+
+- `zh` also supports `--transcriber-backend mms_phonetic` for the existing Chinese phonetic CTC path
+- `mul` also supports `--transcriber-backend wav2vec2_phoneme` for the existing multilingual phoneme-CTC fallback
 
 ### Parser defaults
 
@@ -236,12 +239,10 @@ Useful options:
 
 - `--transcriber-model-path`: choose the py-roller transcriber model store root
 - `--transcriber-model-name`: choose a model alias, model repo id, or an explicit local model path
-  - for `whisperx` and `faster_whisper`, bare aliases like `large-v2`, `large-v3`, or `turbo` resolve to `Systran/faster-whisper-*` snapshots
+  - for `faster_whisper`, bare aliases like `large-v2`, `large-v3`, or `turbo` resolve to `Systran/faster-whisper-*` snapshots
 - `--transcriber-local-files-only`: refuse network access and read only from local files/cache
 
-`audio-core` installs the project's official audio feature set. Its declared dependency chain is intentionally simple and follows the package-level dependencies from the reference v0.4.0 setup rather than a WhisperX-specific lock bundle.
-
-If WhisperX fails in Pyannote VAD checkpoint loading, treat that as an environment compatibility problem inside the installed audio stack rather than a model-store bug.
+`audio-core` installs the project's official audio feature set around the faster-whisper and CTranslate2 local transcription stack.
 
 Examples:
 
@@ -501,7 +502,6 @@ ps -ef | grep -E 'pyroller|demucs'
 `py-roller install` now prefers the newest validated dependency line instead of the older pre-2.6 Torch family. In practice this means:
 
 - Torch/TorchAudio/TorchVision are installed from the official 2.6.0 family for every built-in profile.
-- WhisperX environments pin `pyannote.audio==3.4.0`, because WhisperX users have reported that `pyannote.audio 4.x` breaks compatibility.
 - SOCKS-proxy support is installed by default through `httpx[socks]`, so Hugging Face downloads do not fail just because `socksio` is missing.
 
-If you upgrade or override these packages manually, run `py-roller doctor` before using WhisperX-heavy pipelines.
+If you upgrade or override these packages manually, run `py-roller doctor` before using transcription-heavy pipelines.

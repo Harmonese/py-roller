@@ -13,7 +13,7 @@ class ZhPinyinFromTextUnitizer(TranscriptionAdapter):
     name = "zh_pinyin_from_text"
     unit_timing_semantics = "interpolated_non_acoustic"
 
-    def __init__(self, *, backend: str = "whisperx") -> None:
+    def __init__(self, *, backend: str = "faster_whisper") -> None:
         self.backend = backend
 
     def _unitize(self, engine_output: EngineOutput, *, language: str, tone_mode: str) -> list[TimedUnit]:

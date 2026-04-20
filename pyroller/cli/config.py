@@ -27,7 +27,6 @@ _SHARED_ALLOWED_KEYS = {
     "transcriber_local_files_only",
     "transcriber_compute_type",
     "transcriber_batch_size",
-    "transcriber_no_align_words",
     "splitter_demucs_model",
     "aligner_min_gap",
     "writer_by_tag",

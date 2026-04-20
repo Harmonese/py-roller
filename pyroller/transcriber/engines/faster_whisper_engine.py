@@ -193,9 +193,10 @@ class FasterWhisperEngine(TranscriberEngine):
             stage.phase("running transcription inference")
 
         transcribe_kwargs = {
-            "language": language,
             "word_timestamps": True,
         }
+        if language != "mul":
+            transcribe_kwargs["language"] = language
         if bundle.batched_pipeline is not None:
             segments_iter, info = bundle.batched_pipeline.transcribe(
                 str(audio_path),

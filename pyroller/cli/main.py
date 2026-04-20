@@ -9,14 +9,11 @@ from pathlib import Path
 
 from pyroller.cli.config import apply_cli_config_defaults, load_cli_config, preparse_config_path
 
-
 def _default_intermediate_dir() -> Path:
     return Path(tempfile.gettempdir()) / "py-roller-artifacts"
 
-
 def _default_transcriber_model_path() -> Path:
     return Path.home() / ".cache" / "py-roller" / "models" / "transcriber"
-
 
 def _build_subparser_description(*, batch_mode: bool) -> str:
     io_line = "All inputs/outputs are directories unless --manifest is used." if batch_mode else "All inputs/outputs are file paths."
@@ -26,7 +23,6 @@ def _build_subparser_description(*, batch_mode: bool) -> str:
         else "Run one contiguous pipeline stage chain. Inputs must match the first selected stage, and explicit artifacts are only allowed at legal chain starts."
     )
     return f"{io_line}\n\n{detail}"
-
 
 def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode: bool) -> None:
     stages_group = parser.add_argument_group("stages")
@@ -72,9 +68,8 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     stage_options.add_argument("--transcriber-model-name", default=None, help="Optional transcriber model override or local model path")
     stage_options.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="py-roller transcriber model store root. Models are read from or downloaded into this directory.")
     stage_options.add_argument("--transcriber-local-files-only", action="store_true", default=None, help="Do not access remote model sources. Read only from the local py-roller transcriber model store or explicit local model paths.")
-    stage_options.add_argument("--transcriber-compute-type", default=None, help="Optional WhisperX compute type override")
-    stage_options.add_argument("--transcriber-batch-size", type=int, default=None, help="Optional WhisperX inference batch size override")
-    stage_options.add_argument("--transcriber-no-align-words", action="store_true", default=None, help="Disable WhisperX word alignment")
+    stage_options.add_argument("--transcriber-compute-type", default=None, help="Optional faster-whisper compute type override")
+    stage_options.add_argument("--transcriber-batch-size", type=int, default=None, help="Optional faster-whisper inference batch size override")
     stage_options.add_argument(
         "--parser-lyrics-encoding",
         default=None,
@@ -127,7 +122,6 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
             help="Optional YAML manifest describing per-task input/output file paths. When used, do not also pass batch input/output directories.",
         )
 
-
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
     formatter = argparse.RawTextHelpFormatter
     parser = argparse.ArgumentParser(
@@ -167,15 +161,13 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
     subparsers.add_parser(
         "doctor",
         help="Inspect the local audio/transcriber environment and suggest repairs.",
-        description="Check whether torch, torchaudio, WhisperX, pyannote.audio, demucs, and librosa import successfully in the current environment.",
+        description="Check whether torch, torchaudio, faster-whisper, CTranslate2, demucs, and librosa import successfully in the current environment.",
         formatter_class=formatter,
     )
     return parser, run, batch
 
-
 def _split_stages(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
-
 
 def _split_csv(value: object) -> list[str]:
     if value is None:
@@ -190,7 +182,6 @@ def _split_csv(value: object) -> list[str]:
                 out.append(piece)
         return out
     return [str(value).strip()] if str(value).strip() else []
-
 
 def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     splitter_cfg: dict[str, object] = {"two_stems": "vocals"}
@@ -226,8 +217,6 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
         transcriber_cfg["compute_type"] = args.transcriber_compute_type
     if args.transcriber_batch_size is not None:
         transcriber_cfg["batch_size"] = args.transcriber_batch_size
-    if args.transcriber_no_align_words is not None:
-        transcriber_cfg["align_words"] = not args.transcriber_no_align_words
 
     aligner_cfg: dict[str, object] = {}
     if args.aligner_backend is not None:
@@ -252,7 +241,6 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
         "writer": writer_cfg,
     }
 
-
 def _build_request(args: argparse.Namespace):
     from pyroller.domain import PipelineRequest
 
@@ -276,7 +264,6 @@ def _build_request(args: argparse.Namespace):
         parser_lyrics_encoding=args.parser_lyrics_encoding,
         backend_config=_build_backend_config(args),
     )
-
 
 def _print_run_summary(result, request) -> None:
     from pyroller.batch import batch_task_log_file
@@ -311,7 +298,6 @@ def _print_run_summary(result, request) -> None:
         print("  intermediate dir       : cleaned after success")
         print("  log file               : cleaned after success")
 
-
 def _print_batch_summary(summary) -> None:
     print("[OK] batch complete")
     print(f"  total tasks            : {summary.total}")
@@ -337,13 +323,11 @@ def _print_batch_summary(summary) -> None:
         elif item.status == "ok" and item.cleaned:
             print("           log           : cleaned after success")
 
-
 def _prepare_single_run_request(request):
     from pyroller.utils.ids import make_id
 
     run_id = make_id("run")
     return replace(request, intermediate_dir=request.intermediate_dir / run_id)
-
 
 def _execute_run(request) -> None:
     from pyroller.batch import batch_task_log_file
@@ -361,7 +345,6 @@ def _execute_run(request) -> None:
         runner.close()
     _print_run_summary(result, effective_request)
 
-
 def _validate_batch_directory_outputs(request) -> None:
     for label, path in (
         ("--output-vocal-audio", request.output_vocal_audio_path),
@@ -373,7 +356,6 @@ def _validate_batch_directory_outputs(request) -> None:
     ):
         if path is not None and path.exists() and not path.is_dir():
             raise ValueError(f"{label} must be a directory in batch mode: {path}")
-
 
 def _validate_manifest_batch_usage(request) -> None:
     for label, path in (
@@ -393,7 +375,6 @@ def _validate_manifest_batch_usage(request) -> None:
             raise ValueError(
                 f"{label} cannot be used together with --manifest. Put per-task input/output paths inside the YAML manifest instead."
             )
-
 
 def _execute_batch(args: argparse.Namespace, request) -> int:
     from pyroller.batch import BatchBuilder, BatchRunner, ManifestBatchBuilder
@@ -437,7 +418,6 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
     _print_batch_summary(summary)
     return 1 if summary.failed else 0
 
-
 def main() -> None:
     try:
         raw_argv = sys.argv[1:]
@@ -473,7 +453,6 @@ def main() -> None:
             cli_logger.error("Pipeline command failed: %s", exc)
         print(f"[ERROR] {exc}", file=sys.stderr)
         raise SystemExit(1)
-
 
 if __name__ == "__main__":
     main()

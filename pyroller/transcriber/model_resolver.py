@@ -15,7 +15,6 @@ logger = logging.getLogger("pyroller.transcriber")
 _DEFAULT_MODEL_NAME_BY_BACKEND = {
     "mms_phonetic": "Chuatury/wav2vec2-mms-1b-cmn-phonetic",
     "wav2vec2_phoneme": "facebook/wav2vec2-lv-60-espeak-cv-ft",
-    "whisperx": "large-v2",
     "faster_whisper": "large-v2",
 }
 
@@ -129,8 +128,6 @@ class TranscriberModelResolver:
 
         if self.backend in {"mms_phonetic", "wav2vec2_phoneme"}:
             return self._resolve_hf_snapshot(effective_model_name, materialize=materialize, stage=stage)
-        if self.backend == "whisperx":
-            return self._resolve_whisperx_model(effective_model_name, materialize=materialize, stage=stage)
         if self.backend == "faster_whisper":
             return self._resolve_faster_whisper_model(effective_model_name, materialize=materialize, stage=stage)
         raise ValueError(f"Unsupported transcriber backend for model resolution: {self.backend!r}")
@@ -188,69 +185,6 @@ class TranscriberModelResolver:
         self._write_manifest(plan)
         return plan
 
-    def _resolve_whisperx_model(self, model_name: str, *, materialize: bool, stage: StageProgress | None = None) -> TranscriberResolutionPlan:
-        provider_cache_root = self.model_store_root / "providers" / "whisperx"
-        main_download_root = provider_cache_root / "asr"
-        aux_hf_home = provider_cache_root / "hf_home"
-        (aux_hf_home / "hub").mkdir(parents=True, exist_ok=True)
-        main_download_root.mkdir(parents=True, exist_ok=True)
-        plan = TranscriberResolutionPlan(
-            backend=self.backend,
-            language=self.language,
-            requested_model_name=self.requested_model_name,
-            effective_model_name=model_name,
-            model_store_root=self.model_store_root,
-            provider="whisperx_builtin",
-            provider_kind="whisperx",
-            local_files_only=self.local_files_only,
-            network_required=not self.local_files_only,
-            network_allowed=not self.local_files_only,
-            network_reason=(None if self.local_files_only else "allow WhisperX to materialize ASR and auxiliary models"),
-            provider_cache_root=aux_hf_home / "hub",
-            download_root=main_download_root,
-            auxiliary_assets=[
-                AuxiliaryAssetPlan(role="align", cache_root=aux_hf_home / "hub", required=False, local_only_checked=self.local_files_only),
-                AuxiliaryAssetPlan(role="vad", cache_root=aux_hf_home / "hub", required=False, local_only_checked=self.local_files_only),
-            ],
-        )
-        repo_id = self._resolve_whisperx_repo_id(model_name)
-        existing = self._read_manifest_entry(self.backend, model_name)
-        existing_dir = Path(existing.get("resolved_model_dir")).resolve() if existing and existing.get("resolved_model_dir") else None
-        if existing_dir is not None and existing_dir.exists():
-            plan.resolved_model_dir = existing_dir
-            plan.network_required = False
-            plan.validations.append("reused resolved WhisperX ASR snapshot already present in py-roller model store")
-            self._write_manifest(plan)
-            return plan
-
-        if materialize:
-            from pyroller.transcriber.download_logging import snapshot_download_with_logging
-
-            try:
-                snapshot_dir = Path(
-                    snapshot_download_with_logging(
-                        repo_id=repo_id,
-                        cache_dir=main_download_root,
-                        local_files_only=self.local_files_only,
-                        log_label=f"WhisperX ASR model {repo_id}",
-                        stage=stage,
-                    )
-                ).resolve()
-            except Exception as exc:
-                guidance = (
-                    f"Unable to resolve WhisperX ASR model {repo_id!r} into the local py-roller model store at {main_download_root}. "
-                    f"If you are on a restricted network, pre-download the model into {self.model_store_root} or pass --transcriber-local-files-only once the cache is ready."
-                )
-                raise RuntimeError(guidance) from exc
-            plan.resolved_model_dir = snapshot_dir
-            plan.network_required = False
-            plan.validations.append("resolved WhisperX ASR snapshot into local py-roller model store")
-        else:
-            plan.validations.append("would resolve WhisperX ASR snapshot on demand")
-        self._write_manifest(plan)
-        return plan
-
-
     def _resolve_faster_whisper_model(self, model_name: str, *, materialize: bool, stage: StageProgress | None = None) -> TranscriberResolutionPlan:
         provider_cache_root = self.model_store_root / "providers" / "faster_whisper" / "hub"
         provider_cache_root.mkdir(parents=True, exist_ok=True)
@@ -306,13 +240,7 @@ class TranscriberModelResolver:
         self._write_manifest(plan)
         return plan
 
-
     def _resolve_faster_whisper_repo_id(self, model_name: str) -> str:
-        if "/" in model_name or "\\" in model_name:
-            return model_name
-        return f"Systran/faster-whisper-{model_name}"
-
-    def _resolve_whisperx_repo_id(self, model_name: str) -> str:
         if "/" in model_name or "\\" in model_name:
             return model_name
         return f"Systran/faster-whisper-{model_name}"
@@ -326,7 +254,6 @@ class TranscriberModelResolver:
         if candidate.exists():
             return candidate.resolve()
         return None
-
 
     def _read_manifest_entry(self, backend: str, model_name: str) -> dict[str, Any] | None:
         manifest_path = self.model_store_root / "manifests" / "transcriber-index.json"
@@ -363,14 +290,6 @@ class TranscriberModelResolver:
 def transcriber_provider_environment(plan: TranscriberResolutionPlan):
     previous: dict[str, str | None] = {}
     overrides: dict[str, str] = {}
-    if plan.provider_kind == "whisperx":
-        hf_home = plan.download_root.parent / "hf_home" if plan.download_root is not None else plan.model_store_root / "providers" / "whisperx" / "hf_home"
-        hub_root = hf_home / "hub"
-        hub_root.mkdir(parents=True, exist_ok=True)
-        (hf_home / "transformers").mkdir(parents=True, exist_ok=True)
-        overrides["HF_HOME"] = str(hf_home)
-        overrides["HF_HUB_CACHE"] = str(hub_root)
-        overrides["TRANSFORMERS_CACHE"] = str(hf_home / "transformers")
     if plan.local_files_only:
         overrides["HF_HUB_OFFLINE"] = "1"
         overrides["TRANSFORMERS_OFFLINE"] = "1"

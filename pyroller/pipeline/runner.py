@@ -25,7 +25,6 @@ from pyroller.pipeline.execution_context import PipelineExecutionContext
 from pyroller.progress import NullProgressReporter, ProgressReporter
 from pyroller.splitter import build_splitter, get_splitter_requirements
 from pyroller.transcriber.registry import get_transcriber_config_keys, get_transcriber_requirements, resolve_transcriber_backend
-from pyroller.utils.text import summarize_zh_router_routes
 from pyroller.utils.ids import make_id
 from pyroller.writer import build_writer
 
@@ -63,7 +62,6 @@ _LYRICS_ENCODING_ALIASES = {
     "gb18030": "gb18030",
     "auto": "auto",
 }
-
 
 class ComposablePipelineRunner:
     def __init__(
@@ -381,7 +379,6 @@ class ComposablePipelineRunner:
                 "local_files_only": "--transcriber-local-files-only",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
-                "align_words": "--transcriber-no-align-words",
             }
             used = [flag for key, flag in transcriber_flags.items() if key in transcriber_cfg]
             if used:
@@ -419,7 +416,6 @@ class ComposablePipelineRunner:
                 "local_files_only": "--transcriber-local-files-only",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
-                "align_words": "--transcriber-no-align-words",
             }
             accepted_transcriber_keys = get_transcriber_config_keys(chosen_transcriber_backend)
             incompatible = [
@@ -484,7 +480,6 @@ class ComposablePipelineRunner:
         joined = ", ".join(missing)
         return f"Stage '{stage}' is missing required input artifact(s): {joined}. Provide them explicitly or add the producing stage(s)."
 
-
     def _get_transcriber(self, language: str, config: dict[str, Any]):
         backend_name = str(config.get("backend")) if config.get("backend") else None
         return self.execution_context.get_transcriber(
@@ -548,7 +543,6 @@ class ComposablePipelineRunner:
             try:
                 preflight_stage.phase("loading transcriber backend")
                 preflight_report = transcriber.preflight(effective_language, stage=preflight_stage)
-                self._warn_preflight_for_mixed_zh_lyrics(request, effective_language, transcriber_backend)
                 logger.info("Transcriber preflight passed: %s", json.dumps(preflight_report, ensure_ascii=False))
                 preflight_failed = False
             except Exception as exc:
@@ -634,50 +628,6 @@ class ComposablePipelineRunner:
                 f"{requested_encoding!r}. Supported values: auto, utf-8, utf-8-sig, utf-16, gbk, gb18030, shift-jis."
             )
         return normalized
-
-    def _warn_preflight_for_mixed_zh_lyrics(self, request: PipelineRequest, effective_language: str, transcriber_backend: str) -> None:
-        if effective_language != "zh" or transcriber_backend != "whisperx" or request.lyrics_path is None:
-            return
-
-        try:
-            normalized_request = self._normalize_lyrics_encoding(request.parser_lyrics_encoding)
-            raw_text, used_encoding = self._read_lyrics_text(request.lyrics_path, normalized_request)
-        except Exception as exc:
-            logger.warning(
-                "Unable to inspect lyrics during transcriber preflight for zh mixed-text warning: %s: %s",
-                exc.__class__.__name__,
-                exc,
-            )
-            return
-
-        try:
-            foreign_segments = 0
-            affected_lines = 0
-            for raw_line in raw_text.splitlines():
-                stripped = raw_line.strip()
-                if not stripped:
-                    continue
-                summary = summarize_zh_router_routes(stripped, tone_mode="ignore")
-                line_foreign_segments = int(summary.get("foreign_segment_count", 0))
-                if line_foreign_segments > 0:
-                    affected_lines += 1
-                    foreign_segments += line_foreign_segments
-        except Exception as exc:
-            logger.warning(
-                "Unable to analyze zh lyrics routing during transcriber preflight mixed-text check: %s: %s",
-                exc.__class__.__name__,
-                exc,
-            )
-            return
-
-        if foreign_segments > 0:
-            logger.warning(
-                "Preflight detected %d foreign/digit lyric segments across %d line(s) from %s (encoding=%s). Transcriber backend=whisperx may drop non-Chinese text after normalization. Consider backend=mms_phonetic for mixed zh lyrics.",
-                foreign_segments,
-                affected_lines,
-                request.lyrics_path,
-                used_encoding,
-            )
 
     def _read_lyrics_text(self, lyrics_path: Path, requested_encoding: str) -> tuple[str, str]:
         if requested_encoding != "auto":

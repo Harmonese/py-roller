@@ -18,7 +18,6 @@ PYTHON = sys.executable
 DIST_NAME = "py-roller"
 AUDIO_EXTRA = "audio-core"
 MIN_TORCH = (2, 6, 0)
-MAX_PYANNOTE_MAJOR = 3
 SOCKS_ENV_KEYS = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy")
 
 
@@ -188,7 +187,6 @@ import json
 import os
 
 MIN_TORCH = {MIN_TORCH!r}
-MAX_PYANNOTE_MAJOR = {MAX_PYANNOTE_MAJOR!r}
 SOCKS_ENV_KEYS = {SOCKS_ENV_KEYS!r}
 profile = {profile.name!r}
 problems = []
@@ -235,7 +233,7 @@ except Exception as exc:
     problems.append(f'torchaudio import failed: {{exc.__class__.__name__}}: {{exc}}')
 
 loaded = {{'torch': getattr(torch, '__version__', '?')}}
-for name in ('whisperx', 'pyannote.audio', 'demucs', 'librosa', 'transformers', 'huggingface_hub'):
+for name in ('faster_whisper', 'ctranslate2', 'demucs', 'librosa', 'transformers', 'huggingface_hub'):
     try:
         module = importlib.import_module(name)
         loaded[name] = getattr(module, '__version__', dist_version(name) or 'unknown')
@@ -250,16 +248,11 @@ except Exception:
 
 parsed_torch = parse_version_tuple(loaded['torch'])
 if parsed_torch is None or parsed_torch < MIN_TORCH:
-    problems.append(f'torch {{loaded["torch"]}} is too old for current WhisperX/Transformers alignment loading; need >= {{".".join(str(x) for x in MIN_TORCH)}}')
-
-pyannote_version = loaded.get('pyannote.audio') or dist_version('pyannote.audio')
-parsed_pyannote = parse_version_tuple(pyannote_version) if pyannote_version and pyannote_version != 'unknown' else None
-if parsed_pyannote is not None and parsed_pyannote[0] > MAX_PYANNOTE_MAJOR:
-    problems.append(f'pyannote.audio {{pyannote_version}} is not validated with WhisperX; pin to 3.4.0')
+    problems.append(f'torch {{loaded["torch"]}} is too old for the current transcriber stack; need >= {{".".join(str(x) for x in MIN_TORCH)}}')
 
 transformers_version = loaded.get('transformers')
 if transformers_version and parsed_torch is not None and parsed_torch < MIN_TORCH:
-    problems.append(f'transformers {{transformers_version}} with torch {{loaded["torch"]}} will reject torch.load for WhisperX alignment checkpoints')
+    problems.append(f'transformers {{transformers_version}} with torch {{loaded["torch"]}} may break local transcriber model loading')
 
 uses_socks = any('socks' in os.environ.get(key, '').lower() for key in SOCKS_ENV_KEYS)
 if uses_socks:
@@ -280,8 +273,6 @@ else:
         problems.append(f'expected CUDA to be available for profile {{profile}}, but torch.cuda.is_available() is False (cuda={{cuda_version}})')
 
 summary = [f'torch={{loaded["torch"]}}', f'cuda={{cuda_version}}', f'cuda_available={{cuda_available}}']
-if pyannote_version:
-    summary.append(f'pyannote.audio={{pyannote_version}}')
 if transformers_version:
     summary.append(f'transformers={{transformers_version}}')
 if notes:

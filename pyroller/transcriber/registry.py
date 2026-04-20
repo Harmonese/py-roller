@@ -10,9 +10,9 @@ logger = logging.getLogger("pyroller.transcriber")
 
 _SUPPORTED_LANGUAGES = {language for language, _ in TRANSCRIBER_SPECS}
 _DEFAULT_TRANSCRIBER_BY_LANGUAGE = {
-    "zh": "mms_phonetic",
-    "en": "whisperx",
-    "mul": "wav2vec2_phoneme",
+    "zh": "faster_whisper",
+    "en": "faster_whisper",
+    "mul": "faster_whisper",
 }
 _FALLBACK_LANGUAGE = "mul"
 
