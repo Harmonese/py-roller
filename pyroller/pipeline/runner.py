@@ -388,6 +388,7 @@ class ComposablePipelineRunner:
             aligner_flags = {
                 "backend": "--aligner-backend",
                 "min_gap": "--aligner-min-gap",
+                "repetition": "--aligner-repetition",
             }
             used = [flag for key, flag in aligner_flags.items() if key in aligner_cfg]
             if used:

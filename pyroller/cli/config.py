@@ -29,6 +29,7 @@ _SHARED_ALLOWED_KEYS = {
     "transcriber_batch_size",
     "splitter_demucs_model",
     "aligner_min_gap",
+    "aligner_repetition",
     "writer_by_tag",
     "writer_ass_karaoke_tag_type",
     "cleanup",

@@ -4,6 +4,15 @@ from typing import Any, Optional
 
 from pyroller.aligner.base import Aligner
 from pyroller.aligner.common import SequenceAlignmentSupport, logger
+from pyroller.aligner.repetition import (
+    LineCandidate,
+    analyze_repeat_profile,
+    assignment_trust,
+    candidate_to_assignment,
+    find_line_candidates,
+    select_anchor_chain,
+    select_best_candidate_path,
+)
 from pyroller.domain import AlignmentResult, ParsedLyrics, TranscriptionResult
 from pyroller.progress import NullProgressReporter, ProgressReporter
 
@@ -20,13 +29,17 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         lyric_gap_penalty: float = -0.70,
         min_match_similarity: float = 0.55,
         min_gap: float = 0.5,
+        repetition: str = "none",
     ) -> None:
+        if repetition not in {"none", "few", "full"}:
+            raise ValueError("repetition must be one of: none, few, full")
         self.match_score = match_score
         self.mismatch_penalty = mismatch_penalty
         self.audio_gap_penalty = audio_gap_penalty
         self.lyric_gap_penalty = lyric_gap_penalty
         self.min_match_similarity = min_match_similarity
         self.min_gap = min_gap
+        self.repetition = repetition
 
     def align(self, transcription: TranscriptionResult, parsed_lyrics: ParsedLyrics, progress: ProgressReporter | None = None) -> AlignmentResult:
         progress = progress or NullProgressReporter()
@@ -34,7 +47,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         lyric_lines = parsed_lyrics.lines
         min_time, max_time = self._estimate_alignment_window(transcription, global_units)
 
-        self._log_phase_heading("ALIGNER: GLOBAL DP (DEFAULT)")
+        self._log_phase_heading(f"ALIGNER: GLOBAL DP (repetition={self.repetition})")
         logger.info(
             "Lyric lines=%d | audio units=%d | window=[%.3fs, %.3fs]",
             len(lyric_lines),
@@ -76,6 +89,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                     "backend": self.name,
                     "fallback": "full_interpolation_no_units",
                     "alignment_window": {"start": min_time, "end": max_time},
+                    "repetition": self.repetition,
                 },
             )
 
@@ -102,20 +116,55 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                     "backend": self.name,
                     "fallback": "full_interpolation_no_lyric_units",
                     "alignment_window": {"start": min_time, "end": max_time},
+                    "repetition": self.repetition,
                 },
             )
 
-        traceback_pairs, dp_stats = self._run_global_dp(lyric_units, global_units, stage_progress=stage_progress)
-        stage_progress.phase("recovering line assignments")
-        assignments = self._recover_line_assignments(
-            lyric_lines=lyric_lines,
-            lyric_units=lyric_units,
-            line_ranges=line_ranges,
-            global_units=global_units,
-            traceback_pairs=traceback_pairs,
-            min_time=min_time,
-            max_time=max_time,
-        )
+        repeat_stats: dict[str, Any] = {
+            "mode": self.repetition,
+            "profile": self._repeat_profile_dict([self._line_symbols(line) for line in lyric_lines]),
+        }
+        if self.repetition == "full":
+            stage_progress.phase("building full-repetition candidate lattice")
+            assignments, repeat_stats = self._align_full_repetition_lattice(
+                lyric_lines=lyric_lines,
+                global_units=global_units,
+                min_time=min_time,
+                max_time=max_time,
+            )
+            dp_stats = {
+                "skipped": True,
+                "reason": "repetition_full",
+                "final_score": 0.0,
+                "accepted_matches": 0,
+                "diag_steps": 0,
+                "audio_gaps": 0,
+                "lyric_gaps": 0,
+            }
+        else:
+            traceback_pairs, dp_stats = self._run_global_dp(lyric_units, global_units, stage_progress=stage_progress)
+            stage_progress.phase("recovering line assignments")
+            assignments = self._recover_line_assignments(
+                lyric_lines=lyric_lines,
+                lyric_units=lyric_units,
+                line_ranges=line_ranges,
+                global_units=global_units,
+                traceback_pairs=traceback_pairs,
+                min_time=min_time,
+                max_time=max_time,
+                fill_unresolved=(self.repetition == "none"),
+            )
+            if self.repetition == "few":
+                stage_progress.phase("repairing repeated/omitted regions")
+                repeat_stats = self._repair_few_repetition_regions(
+                    assignments=assignments,
+                    lyric_lines=lyric_lines,
+                    global_units=global_units,
+                    min_time=min_time,
+                    max_time=max_time,
+                )
+                self._fill_unresolved_times(assignments, min_time=min_time, max_time=max_time)
+
         stage_progress.phase("repairing monotonic timestamps")
         repaired, repairs = self._ensure_monotonic(assignments, min_time=min_time, max_time=max_time, min_gap=self.min_gap)
         alignment_lines = [self._assignment_to_alignment_line(lyric_lines[item["lyric_idx"]], item) for item in repaired]
@@ -132,17 +181,21 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 "dp_stats": dp_stats,
                 "unit_count": len(lyric_units),
                 "global_unit_count": len(global_units),
+                "repetition_stats": repeat_stats,
             },
         )
         self._log_alignment_report(self.strategy_name, report, alignment_lines)
-        logger.info(
-            "DP stats: final_score=%.3f accepted_matches=%d diag_steps=%d audio_gaps=%d lyric_gaps=%d",
-            float(dp_stats["final_score"]),
-            int(dp_stats["accepted_matches"]),
-            int(dp_stats["diag_steps"]),
-            int(dp_stats["audio_gaps"]),
-            int(dp_stats["lyric_gaps"]),
-        )
+        if dp_stats.get("skipped"):
+            logger.info("DP stats: skipped (%s)", dp_stats.get("reason", "unknown"))
+        else:
+            logger.info(
+                "DP stats: final_score=%.3f accepted_matches=%d diag_steps=%d audio_gaps=%d lyric_gaps=%d",
+                float(dp_stats["final_score"]),
+                int(dp_stats["accepted_matches"]),
+                int(dp_stats["diag_steps"]),
+                int(dp_stats["audio_gaps"]),
+                int(dp_stats["lyric_gaps"]),
+            )
         stage_progress.close("aligner complete")
         return AlignmentResult(
             language=parsed_lyrics.language,
@@ -161,6 +214,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 "lyric_gap_penalty": self.lyric_gap_penalty,
                 "min_match_similarity": self.min_match_similarity,
                 "min_gap": self.min_gap,
+                "repetition": self.repetition,
                 "alignment_window": {"start": min_time, "end": max_time},
             },
         )
@@ -293,6 +347,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         traceback_pairs: list[dict[str, Any]],
         min_time: float,
         max_time: float,
+        fill_unresolved: bool = True,
     ) -> list[dict[str, Any]]:
         self._log_phase_heading("PHASE 2: LINE ASSIGNMENT RECOVERY")
         matched_positions_by_line: dict[int, list[int]] = {line.line_index: [] for line in lyric_lines}
@@ -377,18 +432,279 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             len(assignments) - len(unresolved_indices),
             len(unresolved_indices),
         )
-        self._fill_unresolved_times(assignments, min_time=min_time, max_time=max_time)
+        if fill_unresolved:
+            self._fill_unresolved_times(assignments, min_time=min_time, max_time=max_time)
         for assignment in assignments:
+            log_time = assignment["time"] if assignment["time"] is not None else -1.0
             logger.debug(
                 "RECOVERED L%02d @ %.3fs conf=%.3f [%s] range=%s text=%r",
                 assignment["lyric_idx"] + 1,
-                float(assignment["time"]),
+                float(log_time),
                 float(assignment["confidence"]),
                 assignment["method"],
                 None if assignment["pos"] < 0 else (assignment["pos"], assignment["end_pos"]),
                 assignment["text"][:80],
             )
         return assignments
+
+
+    def _repeat_profile_dict(self, line_symbols: list[list[str]]) -> dict[str, Any]:
+        profile = analyze_repeat_profile(line_symbols)
+        return {
+            "line_count": profile.line_count,
+            "unique_signature_count": profile.unique_signature_count,
+            "repeat_density": profile.repeat_density,
+            "max_signature_count": profile.max_signature_count,
+            "anchorless": profile.anchorless,
+        }
+
+    def _pending_assignment(self, line, unit_count: int, method: str = "pending_interpolate") -> dict[str, Any]:
+        return {
+            "lyric_idx": line.line_index,
+            "text": line.raw_text,
+            "time": None,
+            "confidence": 0.0,
+            "pos": -1,
+            "end_pos": -1,
+            "method": method,
+            "metadata": {
+                "matched_unit_count": 0,
+                "line_unit_count": unit_count,
+                "coverage": 0.0,
+                "unit_matches": [],
+            },
+        }
+
+    def _find_candidates_for_lines(
+        self,
+        lyric_lines: list,
+        global_units: list[dict[str, Any]],
+        *,
+        audio_start: int,
+        audio_end: int,
+        top_k: int,
+        min_score: float,
+    ) -> tuple[list[list[LineCandidate]], int]:
+        candidates_by_line: list[list[LineCandidate]] = []
+        candidate_count = 0
+        for line in lyric_lines:
+            candidates = find_line_candidates(
+                lyric_idx=line.line_index,
+                lyric_symbols=self._line_symbols(line),
+                global_units=global_units,
+                symbol_similarity=self._symbol_similarity,
+                min_match_similarity=self.min_match_similarity,
+                audio_start=audio_start,
+                audio_end=audio_end,
+                top_k=top_k,
+                min_score=min_score,
+            )
+            candidates_by_line.append(candidates)
+            candidate_count += len(candidates)
+        return candidates_by_line, candidate_count
+
+    def _align_full_repetition_lattice(
+        self,
+        lyric_lines: list,
+        global_units: list[dict[str, Any]],
+        min_time: float,
+        max_time: float,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        self._log_phase_heading("PHASE 1: FULL REPETITION CANDIDATE LATTICE")
+        line_symbols = [self._line_symbols(line) for line in lyric_lines]
+        top_k = min(128, max(24, len(lyric_lines) + 8))
+        candidates_by_line, candidate_count = self._find_candidates_for_lines(
+            lyric_lines=lyric_lines,
+            global_units=global_units,
+            audio_start=0,
+            audio_end=len(global_units) - 1,
+            top_k=top_k,
+            min_score=0.25,
+        )
+        path = select_best_candidate_path(
+            candidates_by_line=candidates_by_line,
+            line_count=len(lyric_lines),
+            min_time=min_time,
+            max_time=max_time,
+            beam_width=96,
+            skip_penalty=-1.10,
+        )
+        assignments: list[dict[str, Any]] = []
+        selected_count = 0
+        for line, symbols, candidate in zip(lyric_lines, line_symbols, path):
+            if candidate is None:
+                assignments.append(self._pending_assignment(line, unit_count=len(symbols)))
+                continue
+            selected_count += 1
+            assignments.append(
+                candidate_to_assignment(
+                    candidate=candidate,
+                    text=line.raw_text,
+                    line_unit_count=len(symbols),
+                    mode="full",
+                    method="repeat_full_lattice",
+                    existing_metadata={"normalized_text": line.normalized_text},
+                )
+            )
+        if len(assignments) < len(lyric_lines):
+            for line, symbols in zip(lyric_lines[len(assignments) :], line_symbols[len(assignments) :]):
+                assignments.append(self._pending_assignment(line, unit_count=len(symbols)))
+        self._fill_unresolved_times(assignments, min_time=min_time, max_time=max_time)
+        stats = {
+            "mode": "full",
+            "profile": self._repeat_profile_dict(line_symbols),
+            "candidate_lines": sum(1 for candidates in candidates_by_line if candidates),
+            "candidate_count": candidate_count,
+            "selected_count": selected_count,
+            "beam_width": 96,
+            "top_k": top_k,
+            "unresolved_count": sum(1 for item in assignments if item.get("method") == "interpolate"),
+        }
+        logger.info(
+            "Full repetition lattice: candidates=%d selected=%d interpolated=%d",
+            candidate_count,
+            selected_count,
+            int(stats["unresolved_count"]),
+        )
+        return assignments, stats
+
+    def _repair_few_repetition_regions(
+        self,
+        assignments: list[dict[str, Any]],
+        lyric_lines: list,
+        global_units: list[dict[str, Any]],
+        min_time: float,
+        max_time: float,
+    ) -> dict[str, Any]:
+        self._log_phase_heading("PHASE 3: FEW REPETITION LOCAL LATTICE REPAIR")
+        line_symbols = [self._line_symbols(line) for line in lyric_lines]
+        anchors = select_anchor_chain(assignments=assignments, line_symbols=line_symbols)
+        anchor_by_line = {anchor.lyric_idx: anchor for anchor in anchors}
+        trust_by_line = {int(item["lyric_idx"]): assignment_trust(item) for item in assignments}
+        weak_lines = {
+            int(item["lyric_idx"])
+            for item in assignments
+            if int(item["lyric_idx"]) not in anchor_by_line and assignment_trust(item) in {"weak", "unresolved"}
+        }
+        segments: list[dict[str, Any]] = []
+        repaired_count = 0
+        candidate_count = 0
+        selected_count = 0
+
+        anchor_points: list[Optional[object]] = [None, *anchors, None]
+        for left_anchor, right_anchor in zip(anchor_points, anchor_points[1:]):
+            left_line = -1 if left_anchor is None else int(left_anchor.lyric_idx)
+            right_line = len(lyric_lines) if right_anchor is None else int(right_anchor.lyric_idx)
+            line_start = left_line + 1
+            line_end = right_line - 1
+            if line_start > line_end:
+                continue
+            if not any(line_idx in weak_lines for line_idx in range(line_start, line_end + 1)):
+                continue
+
+            audio_start = 0 if left_anchor is None else int(left_anchor.audio_end) + 1
+            audio_end = len(global_units) - 1 if right_anchor is None else int(right_anchor.audio_start) - 1
+            if audio_end < audio_start:
+                segments.append(
+                    {
+                        "line_start": line_start,
+                        "line_end": line_end,
+                        "audio_start": audio_start,
+                        "audio_end": audio_end,
+                        "status": "skipped_empty_audio_window",
+                    }
+                )
+                continue
+
+            segment_lines = lyric_lines[line_start : line_end + 1]
+            top_k = min(64, max(16, len(segment_lines) + 8))
+            local_candidates, local_candidate_count = self._find_candidates_for_lines(
+                lyric_lines=segment_lines,
+                global_units=global_units,
+                audio_start=audio_start,
+                audio_end=audio_end,
+                top_k=top_k,
+                min_score=0.28,
+            )
+            candidate_count += local_candidate_count
+            path = select_best_candidate_path(
+                candidates_by_line=local_candidates,
+                line_count=len(segment_lines),
+                min_time=float(global_units[audio_start]["start_time"]),
+                max_time=float(global_units[audio_end]["end_time"]),
+                beam_width=64,
+                skip_penalty=-1.20,
+            )
+            segment_selected = 0
+            segment_repaired = 0
+            for offset, candidate in enumerate(path):
+                if candidate is None:
+                    continue
+                assign_idx = line_start + offset
+                if assign_idx in anchor_by_line:
+                    continue
+                old_assignment = assignments[assign_idx]
+                old_confidence = float(old_assignment.get("confidence") or 0.0)
+                old_trust = trust_by_line.get(assign_idx, assignment_trust(old_assignment))
+                should_update = old_trust in {"weak", "unresolved"} or candidate.score >= old_confidence + 0.05
+                if not should_update:
+                    continue
+                line = lyric_lines[assign_idx]
+                selected_count += 1
+                segment_selected += 1
+                assignments[assign_idx] = candidate_to_assignment(
+                    candidate=candidate,
+                    text=line.raw_text,
+                    line_unit_count=len(line_symbols[assign_idx]),
+                    mode="few",
+                    method="repeat_lattice_repair",
+                    existing_metadata=dict(old_assignment.get("metadata", {})),
+                )
+                repaired_count += 1
+                segment_repaired += 1
+            segments.append(
+                {
+                    "line_start": line_start,
+                    "line_end": line_end,
+                    "audio_start": audio_start,
+                    "audio_end": audio_end,
+                    "candidate_count": local_candidate_count,
+                    "selected_count": segment_selected,
+                    "repaired_count": segment_repaired,
+                    "status": "ok",
+                }
+            )
+
+        stats = {
+            "mode": "few",
+            "profile": self._repeat_profile_dict(line_symbols),
+            "anchor_count": len(anchors),
+            "anchors": [
+                {
+                    "lyric_idx": anchor.lyric_idx,
+                    "audio_start": anchor.audio_start,
+                    "audio_end": anchor.audio_end,
+                    "confidence": anchor.confidence,
+                    "coverage": anchor.coverage,
+                }
+                for anchor in anchors
+            ],
+            "trust_counts": {trust: list(trust_by_line.values()).count(trust) for trust in sorted(set(trust_by_line.values()))},
+            "weak_line_count": len(weak_lines),
+            "segments": segments,
+            "candidate_count": candidate_count,
+            "selected_count": selected_count,
+            "repaired_count": repaired_count,
+        }
+        logger.info(
+            "Few repetition repair: anchors=%d weak_lines=%d segments=%d repaired=%d candidates=%d",
+            len(anchors),
+            len(weak_lines),
+            len(segments),
+            repaired_count,
+            candidate_count,
+        )
+        return stats
 
     def _fill_unresolved_times(self, assignments: list[dict[str, Any]], min_time: float, max_time: float) -> None:
         known_indices = [idx for idx, item in enumerate(assignments) if item["time"] is not None]

@@ -78,6 +78,18 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     )
     stage_options.add_argument("--aligner-backend", default=None, help="Optional aligner backend override. Internal default is used when omitted")
     stage_options.add_argument("--aligner-min-gap", type=float, default=None, help="Optional minimum post-repair gap between aligned lyric lines")
+    stage_options.add_argument(
+        "--aligner-repetition",
+        choices=["none", "few", "full"],
+        default=None,
+        help=(
+            "Repetition handling mode for aligner. "
+            "none=existing global DP behavior; "
+            "few=repair sparse repeated/omitted regions between trusted anchors; "
+            "full=use anchorless per-line candidate lattice for highly repetitive songs. "
+            "Default: none"
+        ),
+    )
     stage_options.add_argument("--writer-backend", default=None, help="Optional writer backend override. Internal default is used when omitted")
     stage_options.add_argument("--writer-spacing", choices=["keep", "drop"], default=None, help="Whether writer outputs structural blank lyric lines. Default: keep")
     stage_options.add_argument("--writer-by-tag", default=None, help="Optional writer BY tag used by LRC and ASS outputs")
@@ -223,6 +235,8 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
         aligner_cfg["backend"] = args.aligner_backend
     if args.aligner_min_gap is not None:
         aligner_cfg["min_gap"] = args.aligner_min_gap
+    if args.aligner_repetition is not None:
+        aligner_cfg["repetition"] = args.aligner_repetition
 
     writer_cfg: dict[str, object] = {"spacing": args.writer_spacing or "keep"}
     if args.writer_backend is not None:

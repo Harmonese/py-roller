@@ -184,6 +184,23 @@ py-roller run \
   --output-roller ./song.lrc
 ```
 
+For repeated or partially omitted lyrics, explicitly choose the repetition strategy:
+
+```bash
+py-roller run \
+  --stages a,w \
+  --timed-units ./song.timed_units.json \
+  --parsed-lyrics ./song.parsed_lyrics.json \
+  --aligner-repetition few \
+  --output-roller ./song.lrc
+```
+
+`--aligner-repetition` accepts:
+
+- `none`: default; preserves the existing `global_dp_v1` behavior for lyrics where repeated lines are fully written out.
+- `few`: uses global DP as a proposal, then repairs weak repeated/omitted regions between trusted anchors with a local candidate lattice.
+- `full`: skips anchor reliance and uses per-line top-k candidate generation plus beam search for highly repetitive or anchorless songs.
+
 ### Rewrite only from an existing alignment result
 
 ```bash
@@ -218,6 +235,7 @@ Optional transcriber backends:
 ### Other defaults
 
 - aligner backend -> `global_dp_v1`
+- aligner repetition mode -> `none`
 - writer backend -> `lrc_ms`
 - language -> `mul`
 - `writer_spacing` -> keep
