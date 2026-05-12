@@ -31,7 +31,7 @@ class FasterWhisperEngine(TranscriberEngine):
         self,
         *,
         model_name: str = "large-v2",
-        model_path: str | None = None,
+        model_path: str | Path | None = None,
         local_files_only: bool = False,
         device: str = "cpu",
         compute_type: str = "int8",
@@ -43,7 +43,7 @@ class FasterWhisperEngine(TranscriberEngine):
         hf_max_workers: int | None = None,
     ) -> None:
         self.model_name = model_name
-        self.model_path = model_path
+        self.model_path = str(model_path) if model_path is not None else None
         self.local_files_only = local_files_only
         self.device = device
         self.compute_type = compute_type

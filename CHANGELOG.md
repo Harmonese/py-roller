@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.3] - 2026-05-12
+
+### Added
+- Added `--progress-format {human,jsonl,both}` for structured progress output without breaking the default terminal-oriented CLI experience.
+- Added `PYROLLER_EVENT` JSONL progress events for GUI frontends, covering stage lifecycle, Hugging Face model download progress, artifact writes, and failures.
+- Added byte-level model-cache progress reporting for large Hugging Face downloads so frontends can distinguish active downloads from stalled jobs.
+
+### Fixed
+- Fixed timed_units artifact serialization when transcriber metadata contains pathlib Path values, such as --transcriber-model-path from the CLI.
+- Normalized transcriber engine metadata model_path values to strings for faster-whisper and wav2vec2/CTC backends.
+
+
 ## [0.5.2] - 2026-05-12
 
 ### Fixed

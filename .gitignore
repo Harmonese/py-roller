@@ -14,3 +14,4 @@ testdata_out/
 models/
 *.pyc
 *.pyo
+tests/

@@ -151,6 +151,16 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
         help="Intermediate cleanup policy: on-success removes successful task directories; never keeps them. Default: on-success",
     )
     runtime.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Console and file log verbosity. Use DEBUG for full tracebacks.")
+    runtime.add_argument(
+        "--progress-format",
+        choices=["human", "jsonl", "both"],
+        default="human",
+        help=(
+            "Progress output format. human keeps terminal-oriented progress; "
+            "jsonl emits machine-readable PYROLLER_EVENT JSON lines for GUI frontends; "
+            "both emits both. Default: human"
+        ),
+    )
 
     if batch_mode:
         batch = parser.add_argument_group("batch-only")
@@ -409,7 +419,7 @@ def _prepare_single_run_request(request):
     run_id = make_id("run")
     return replace(request, intermediate_dir=request.intermediate_dir / run_id)
 
-def _execute_run(request) -> None:
+def _execute_run(request, *, progress_format: str = "human") -> None:
     from pyroller.batch import batch_task_log_file
     from pyroller.logging_utils import configure_logging
     from pyroller.pipeline import ComposablePipelineRunner
@@ -418,7 +428,7 @@ def _execute_run(request) -> None:
     effective_request = _prepare_single_run_request(request)
     log_file = batch_task_log_file(effective_request.intermediate_dir)
     configure_logging(level=effective_request.log_level, log_file=log_file)
-    runner = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter())
+    runner = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter(progress_format))
     try:
         result = runner.run(effective_request)
     finally:
@@ -516,7 +526,7 @@ def main() -> None:
 
         request = _build_request(args)
         if args.command == "run":
-            _execute_run(request)
+            _execute_run(request, progress_format=args.progress_format)
             return
         if args.command == "batch":
             raise SystemExit(_execute_batch(args, request))

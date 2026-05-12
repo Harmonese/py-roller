@@ -38,6 +38,7 @@ _SHARED_ALLOWED_KEYS = {
     "writer_by_tag",
     "writer_ass_karaoke_tag_type",
     "cleanup",
+    "progress_format",
 }
 _RUN_ALLOWED_KEYS: set[str] = set()
 _BATCH_ALLOWED_KEYS = {

@@ -490,16 +490,37 @@ batch:
 
 ## Progress, logs, and cleanup
 
-The project exposes a reusable progress-reporting interface so CLI and future GUI frontends can share stage updates.
+The project exposes progress in two layers:
 
-Current behavior:
+- human-readable logs for normal terminal use;
+- optional machine-readable JSONL events for GUI frontends such as lrc-roller.
 
-- splitter: Demucs progress plus wrapper stage progress.
-- filter: phase progress.
-- transcriber: phase progress.
-- aligner: phase progress plus DP row progress.
+Use `--progress-format` to choose the progress output mode:
 
-In single-task `run`, progress is shown as CLI progress bars when the terminal supports it. In `batch`, per-task progress is logged to avoid multiple workers fighting for one terminal.
+```bash
+py-roller run ... --progress-format human   # default, terminal-friendly logs
+py-roller run ... --progress-format jsonl   # structured PYROLLER_EVENT lines
+py-roller run ... --progress-format both    # logs plus structured events
+```
+
+`jsonl` emits one parseable event per line with the `PYROLLER_EVENT ` prefix, for example:
+
+```text
+PYROLLER_EVENT {"type":"download_progress","stage":"model-download","repo_id":"Systran/faster-whisper-large-v2","bytes_downloaded":1534203904,"bytes_total":3086912962,"percent":49.7}
+```
+
+This is intended for frontends that need reliable stage and download progress instead of parsing mixed logs from `tqdm`, Demucs, and `huggingface_hub`. Human-readable mode remains the default so existing CLI workflows are unchanged.
+
+Current progress coverage:
+
+- model preflight and Hugging Face model download events, including cache path, proxy/XET settings, bytes downloaded, total bytes when known, and estimated speed;
+- splitter/Demucs wrapper progress;
+- filter phase progress;
+- transcriber phase progress;
+- parser, aligner, and writer stage events;
+- artifact write events and failure events.
+
+In single-task `run`, human progress is shown as terminal logs/progress bars when supported. In `batch`, per-task progress is logged to avoid multiple workers fighting for one terminal. GUI frontends should prefer `--progress-format jsonl`.
 
 Intermediate files live under:
 

@@ -32,7 +32,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         *,
         backend_name: str,
         model_name: str,
-        model_path: str | None = None,
+        model_path: str | Path | None = None,
         local_files_only: bool = False,
         device: str = "cpu",
         target_sample_rate: int = 16000,
@@ -45,7 +45,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
     ) -> None:
         self.backend_name = backend_name
         self.model_name = model_name
-        self.model_path = model_path
+        self.model_path = str(model_path) if model_path is not None else None
         self.local_files_only = local_files_only
         self.device = device
         self.target_sample_rate = target_sample_rate
