@@ -516,7 +516,7 @@ Current progress coverage:
 - model preflight and Hugging Face model download events, including cache path, proxy/XET settings, bytes downloaded, total bytes when known, and estimated speed;
 - splitter/Demucs wrapper progress;
 - filter phase progress;
-- transcriber phase progress;
+- transcriber phase progress, including faster-whisper segment-based inference updates when available;
 - parser, aligner, and writer stage events;
 - artifact write events and failure events.
 

@@ -205,7 +205,11 @@ class FasterWhisperEngine(TranscriberEngine):
         )
 
         if stage is not None:
-            stage.phase("running transcription inference")
+            # Do not advance the coarse phase counter to 3/3 before inference has
+            # actually completed. GUI frontends otherwise look stuck at 100% while
+            # faster-whisper is still transcribing. Detailed percent updates are
+            # emitted below as segments are yielded.
+            stage.update(advance=0, message="running transcription inference")
 
         transcribe_kwargs = {
             "word_timestamps": True,
@@ -225,7 +229,46 @@ class FasterWhisperEngine(TranscriberEngine):
                 **transcribe_kwargs,
             )
 
-        segments = list(segments_iter)
+        audio_duration_hint = self._float_or_none(self._field(info, "duration"))
+        duration_after_vad = self._float_or_none(self._field(info, "duration_after_vad"))
+        if stage is not None:
+            stage.event(
+                "stage_progress",
+                stage="transcriber",
+                message="Transcribing audio",
+                audio_duration=audio_duration_hint,
+                duration_after_vad=duration_after_vad,
+                percent=None,
+            )
+
+        segments = []
+        last_percent_reported = -1
+        for segment in segments_iter:
+            segments.append(segment)
+            segment_end = self._float_or_none(self._field(segment, "end"))
+            percent = None
+            if audio_duration_hint and segment_end is not None:
+                percent = max(0.0, min(1.0, segment_end / audio_duration_hint))
+            percent_bucket = int((percent or 0.0) * 100)
+            if stage is not None and (percent is None or percent_bucket >= last_percent_reported + 2 or percent_bucket >= 100):
+                last_percent_reported = percent_bucket
+                stage.event(
+                    "stage_progress",
+                    stage="transcriber",
+                    message="Transcribing audio",
+                    completed=percent_bucket if percent is not None else len(segments),
+                    total=100 if percent is not None else 0,
+                    unit="%" if percent is not None else "segment",
+                    percent=percent,
+                    audio_time_processed=segment_end,
+                    audio_duration=audio_duration_hint,
+                    duration_after_vad=duration_after_vad,
+                    segments=len(segments),
+                    text=self._normalized_text(self._field(segment, "text")),
+                )
+
+        if stage is not None:
+            stage.update(advance=1, message="transcription inference complete")
         spans = self._segments_to_spans(segments)
         raw_text = " ".join(text for text in (self._normalized_text(self._field(segment, "text")) for segment in segments) if text) or None
         audio_duration = self._infer_audio_duration(info, segments)

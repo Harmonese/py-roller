@@ -4,12 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.3-hf1] - 2026-05-12
+
+## Fixed
+- Fixed a transcriber coarse phase issue that causes problems in `lrc-roller`.
+
 ## [0.5.3] - 2026-05-12
 
 ### Added
 - Added `--progress-format {human,jsonl,both}` for structured progress output without breaking the default terminal-oriented CLI experience.
 - Added `PYROLLER_EVENT` JSONL progress events for GUI frontends, covering stage lifecycle, Hugging Face model download progress, artifact writes, and failures.
 - Added byte-level model-cache progress reporting for large Hugging Face downloads so frontends can distinguish active downloads from stalled jobs.
+- Added live faster-whisper transcription progress events based on yielded segment end times, so GUI frontends do not appear stuck at the final transcriber phase.
 
 ### Fixed
 - Fixed timed_units artifact serialization when transcriber metadata contains pathlib Path values, such as --transcriber-model-path from the CLI.
