@@ -6,7 +6,7 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ## [0.5.3-hf1] - 2026-05-12
 
-## Fixed
+### Fixed
 - Fixed a transcriber coarse phase issue that causes problems in `lrc-roller`.
 
 ## [0.5.3] - 2026-05-12
