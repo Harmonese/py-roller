@@ -68,6 +68,11 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     stage_options.add_argument("--transcriber-model-name", default=None, help="Optional transcriber model override or local model path")
     stage_options.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="py-roller transcriber model store root. Models are read from or downloaded into this directory.")
     stage_options.add_argument("--transcriber-local-files-only", action="store_true", default=None, help="Do not access remote model sources. Read only from the local py-roller transcriber model store or explicit local model paths.")
+    stage_options.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="Control Hugging Face XET downloads for transcriber models. Use 'off' when XET/CAS is unreliable on your network. Default: auto")
+    stage_options.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890")
+    stage_options.add_argument("--transcriber-hf-etag-timeout", type=float, default=None, help="Hugging Face metadata/etag timeout in seconds for transcriber model downloads")
+    stage_options.add_argument("--transcriber-hf-download-timeout", type=float, default=None, help="Hugging Face file download timeout in seconds for transcriber model downloads")
+    stage_options.add_argument("--transcriber-hf-max-workers", type=int, default=None, help="Maximum parallel workers used by Hugging Face snapshot_download for transcriber models")
     stage_options.add_argument("--transcriber-compute-type", default=None, help="Optional faster-whisper compute type override")
     stage_options.add_argument("--transcriber-batch-size", type=int, default=None, help="Optional faster-whisper inference batch size override")
     stage_options.add_argument(
@@ -223,6 +228,16 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
         transcriber_cfg["model_path"] = args.transcriber_model_path
     if args.transcriber_local_files_only is not None:
         transcriber_cfg["local_files_only"] = args.transcriber_local_files_only
+    if args.transcriber_hf_xet is not None:
+        transcriber_cfg["hf_xet"] = args.transcriber_hf_xet
+    if args.transcriber_hf_proxy is not None:
+        transcriber_cfg["hf_proxy"] = args.transcriber_hf_proxy
+    if args.transcriber_hf_etag_timeout is not None:
+        transcriber_cfg["hf_etag_timeout"] = args.transcriber_hf_etag_timeout
+    if args.transcriber_hf_download_timeout is not None:
+        transcriber_cfg["hf_download_timeout"] = args.transcriber_hf_download_timeout
+    if args.transcriber_hf_max_workers is not None:
+        transcriber_cfg["hf_max_workers"] = args.transcriber_hf_max_workers
     if args.transcriber_device is not None:
         transcriber_cfg["device"] = args.transcriber_device
     if args.transcriber_compute_type is not None:

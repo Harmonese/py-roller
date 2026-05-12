@@ -377,6 +377,11 @@ class ComposablePipelineRunner:
                 "model_name": "--transcriber-model-name",
                 "model_path": "--transcriber-model-path",
                 "local_files_only": "--transcriber-local-files-only",
+                "hf_xet": "--transcriber-hf-xet",
+                "hf_proxy": "--transcriber-hf-proxy",
+                "hf_etag_timeout": "--transcriber-hf-etag-timeout",
+                "hf_download_timeout": "--transcriber-hf-download-timeout",
+                "hf_max_workers": "--transcriber-hf-max-workers",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
             }
@@ -415,6 +420,11 @@ class ComposablePipelineRunner:
                 "model_name": "--transcriber-model-name",
                 "model_path": "--transcriber-model-path",
                 "local_files_only": "--transcriber-local-files-only",
+                "hf_xet": "--transcriber-hf-xet",
+                "hf_proxy": "--transcriber-hf-proxy",
+                "hf_etag_timeout": "--transcriber-hf-etag-timeout",
+                "hf_download_timeout": "--transcriber-hf-download-timeout",
+                "hf_max_workers": "--transcriber-hf-max-workers",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
             }

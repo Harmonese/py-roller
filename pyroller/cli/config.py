@@ -25,6 +25,11 @@ _SHARED_ALLOWED_KEYS = {
     "transcriber_model_name",
     "transcriber_model_path",
     "transcriber_local_files_only",
+    "transcriber_hf_xet",
+    "transcriber_hf_proxy",
+    "transcriber_hf_etag_timeout",
+    "transcriber_hf_download_timeout",
+    "transcriber_hf_max_workers",
     "transcriber_compute_type",
     "transcriber_batch_size",
     "splitter_demucs_model",
@@ -146,6 +151,9 @@ def _coerce_values(values: dict[str, Any]) -> dict[str, Any]:
             out[key] = Path(str(value))
         elif key == "filter_chain" and isinstance(value, list):
             out[key] = [str(item) for item in value]
+        elif key == "transcriber_hf_xet" and isinstance(value, bool):
+            # YAML 1.1 parsers commonly coerce unquoted on/off to booleans.
+            out[key] = "on" if value else "off"
         else:
             out[key] = value
     return out

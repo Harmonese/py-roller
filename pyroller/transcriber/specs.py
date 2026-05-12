@@ -18,6 +18,32 @@ from pyroller.transcriber.unitizers import (
 EngineFactory = Callable[[dict[str, Any]], TranscriberEngine]
 AdapterFactory = Callable[[], TranscriptionAdapter]
 
+_HF_DOWNLOAD_CONFIG_KEYS = frozenset({
+    "hf_xet",
+    "hf_proxy",
+    "hf_etag_timeout",
+    "hf_download_timeout",
+    "hf_max_workers",
+})
+
+_FASTER_WHISPER_CONFIG_KEYS = frozenset({
+    "model_name",
+    "model_path",
+    "local_files_only",
+    "device",
+    "compute_type",
+    "batch_size",
+}) | _HF_DOWNLOAD_CONFIG_KEYS
+
+_WAV2VEC2_CONFIG_KEYS = frozenset({
+    "model_name",
+    "model_path",
+    "local_files_only",
+    "device",
+    "target_sample_rate",
+    "trust_remote_code",
+}) | _HF_DOWNLOAD_CONFIG_KEYS
+
 
 @dataclass(frozen=True)
 class TranscriberSpec:
@@ -56,7 +82,7 @@ TRANSCRIBER_SPECS: dict[tuple[str, str], TranscriberSpec] = {
         language="zh",
         backend="faster_whisper",
         requirements=("faster_whisper",),
-        config_keys=frozenset({"model_name", "model_path", "local_files_only", "device", "compute_type", "batch_size"}),
+        config_keys=_FASTER_WHISPER_CONFIG_KEYS,
         engine_factory=_build_faster_whisper_engine,
         adapter_factory=lambda: ZhPinyinFromTextUnitizer(backend="faster_whisper"),
     ),
@@ -64,7 +90,7 @@ TRANSCRIBER_SPECS: dict[tuple[str, str], TranscriberSpec] = {
         language="en",
         backend="faster_whisper",
         requirements=("faster_whisper",),
-        config_keys=frozenset({"model_name", "model_path", "local_files_only", "device", "compute_type", "batch_size"}),
+        config_keys=_FASTER_WHISPER_CONFIG_KEYS,
         engine_factory=_build_faster_whisper_engine,
         adapter_factory=lambda: EnArpabetUnitizer(backend="faster_whisper"),
     ),
@@ -72,7 +98,7 @@ TRANSCRIBER_SPECS: dict[tuple[str, str], TranscriberSpec] = {
         language="mul",
         backend="faster_whisper",
         requirements=("faster_whisper",),
-        config_keys=frozenset({"model_name", "model_path", "local_files_only", "device", "compute_type", "batch_size"}),
+        config_keys=_FASTER_WHISPER_CONFIG_KEYS,
         engine_factory=_build_faster_whisper_engine,
         adapter_factory=lambda: MulIpaFromTextUnitizer(backend="faster_whisper"),
     ),
@@ -80,7 +106,7 @@ TRANSCRIBER_SPECS: dict[tuple[str, str], TranscriberSpec] = {
         language="zh",
         backend="mms_phonetic",
         requirements=("librosa", "torch", "transformers", "huggingface_hub"),
-        config_keys=frozenset({"model_name", "model_path", "local_files_only", "device", "target_sample_rate", "trust_remote_code"}),
+        config_keys=_WAV2VEC2_CONFIG_KEYS,
         engine_factory=_build_mms_ctc_engine,
         adapter_factory=lambda: ZhPinyinFromCTCUnitizer(backend="mms_phonetic"),
     ),
@@ -88,7 +114,7 @@ TRANSCRIBER_SPECS: dict[tuple[str, str], TranscriberSpec] = {
         language="mul",
         backend="wav2vec2_phoneme",
         requirements=("librosa", "torch", "transformers", "huggingface_hub"),
-        config_keys=frozenset({"model_name", "model_path", "local_files_only", "device", "target_sample_rate", "trust_remote_code"}),
+        config_keys=_WAV2VEC2_CONFIG_KEYS,
         engine_factory=_build_mul_ctc_engine,
         adapter_factory=lambda: MulIpaUnitizer(backend="wav2vec2_phoneme"),
     ),

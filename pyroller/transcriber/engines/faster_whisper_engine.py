@@ -10,6 +10,7 @@ from typing import Any
 from pyroller.domain import AudioArtifact
 from pyroller.transcriber.engine_types import ENGINE_OUTPUT_SCHEMA_VERSION, EngineOutput, EngineSpan
 from pyroller.transcriber.engines.base import TranscriberEngine
+from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment
 
 logger = logging.getLogger("pyroller.transcriber")
 
@@ -35,6 +36,11 @@ class FasterWhisperEngine(TranscriberEngine):
         device: str = "cpu",
         compute_type: str = "int8",
         batch_size: int = 8,
+        hf_xet: str = "auto",
+        hf_proxy: str | None = None,
+        hf_etag_timeout: float | None = None,
+        hf_download_timeout: float | None = None,
+        hf_max_workers: int | None = None,
     ) -> None:
         self.model_name = model_name
         self.model_path = model_path
@@ -42,6 +48,13 @@ class FasterWhisperEngine(TranscriberEngine):
         self.device = device
         self.compute_type = compute_type
         self.batch_size = max(int(batch_size), 1)
+        self.hf_download_config = HFDownloadConfig(
+            xet=hf_xet,
+            proxy=hf_proxy,
+            etag_timeout=hf_etag_timeout,
+            download_timeout=hf_download_timeout,
+            max_workers=hf_max_workers,
+        )
         self._prepared: _PreparedFasterWhisperBundle | None = None
 
     def _prepare_phase_count(self, language: str) -> int:
@@ -64,6 +77,7 @@ class FasterWhisperEngine(TranscriberEngine):
             model_name=self.model_name,
             model_path=self.model_path,
             local_files_only=self.local_files_only,
+            hf_download_config=self.hf_download_config,
         )
         return resolver.resolve(materialize=materialize, stage=stage)
 
@@ -97,58 +111,59 @@ class FasterWhisperEngine(TranscriberEngine):
                 stage.phase("reusing prepared faster-whisper model")
             return self._prepared  # type: ignore[return-value]
 
-        try:
-            from faster_whisper import WhisperModel  # type: ignore
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("faster-whisper is not installed. Install with: pip install faster-whisper") from exc
+        with hf_download_environment(self.hf_download_config, local_files_only=self.local_files_only):
+            try:
+                from faster_whisper import WhisperModel  # type: ignore
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError("faster-whisper is not installed. Install with: pip install faster-whisper") from exc
 
-        try:
-            from faster_whisper import BatchedInferencePipeline  # type: ignore
-        except Exception:  # pragma: no cover
-            BatchedInferencePipeline = None
+            try:
+                from faster_whisper import BatchedInferencePipeline  # type: ignore
+            except Exception:  # pragma: no cover
+                BatchedInferencePipeline = None
 
-        self.close()
-        if stage is not None:
-            stage.phase("resolving transcriber model")
-        plan = self._build_resolution_plan(language, materialize=True, stage=stage)
-        model = None
-        batched_pipeline = None
-        try:
-            model_ref = str(plan.resolved_model_dir) if plan.resolved_model_dir is not None else plan.effective_model_name
-            logger.info("Preparing faster-whisper model=%s from=%s device=%s", self.model_name, model_ref, self.device)
+            self.close()
             if stage is not None:
-                stage.phase("loading faster-whisper model")
-            model = WhisperModel(
-                model_ref,
-                device=self.device,
-                compute_type=self.compute_type,
-                download_root=str(plan.download_root) if plan.download_root is not None else None,
-                local_files_only=True,
-            )
-            if self.batch_size > 1 and BatchedInferencePipeline is not None:
-                batched_pipeline = BatchedInferencePipeline(model=model)
-            elif self.batch_size > 1 and BatchedInferencePipeline is None:
-                logger.warning("BatchedInferencePipeline is unavailable in the installed faster-whisper package; falling back to non-batched inference")
-            runtime = plan.runtime_record()
-            runtime["compatibility_bundle"] = self._runtime_versions()
-            runtime["batching_enabled"] = batched_pipeline is not None
-            runtime["native_word_timestamps"] = True
-            bundle = _PreparedFasterWhisperBundle(
-                language=language,
-                plan=plan,
-                model=model,
-                batched_pipeline=batched_pipeline,
-                runtime_report=runtime,
-            )
-            self._prepared = bundle
-            return bundle
-        except Exception:
-            if batched_pipeline is not None:
-                del batched_pipeline
-            if model is not None:
-                del model
-            self._clear_device_cache()
-            raise
+                stage.phase("resolving transcriber model")
+            plan = self._build_resolution_plan(language, materialize=True, stage=stage)
+            model = None
+            batched_pipeline = None
+            try:
+                model_ref = str(plan.resolved_model_dir) if plan.resolved_model_dir is not None else plan.effective_model_name
+                logger.info("Preparing faster-whisper model=%s from=%s device=%s", self.model_name, model_ref, self.device)
+                if stage is not None:
+                    stage.phase("loading faster-whisper model")
+                model = WhisperModel(
+                    model_ref,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                    download_root=str(plan.download_root) if plan.download_root is not None else None,
+                    local_files_only=True,
+                )
+                if self.batch_size > 1 and BatchedInferencePipeline is not None:
+                    batched_pipeline = BatchedInferencePipeline(model=model)
+                elif self.batch_size > 1 and BatchedInferencePipeline is None:
+                    logger.warning("BatchedInferencePipeline is unavailable in the installed faster-whisper package; falling back to non-batched inference")
+                runtime = plan.runtime_record()
+                runtime["compatibility_bundle"] = self._runtime_versions()
+                runtime["batching_enabled"] = batched_pipeline is not None
+                runtime["native_word_timestamps"] = True
+                bundle = _PreparedFasterWhisperBundle(
+                    language=language,
+                    plan=plan,
+                    model=model,
+                    batched_pipeline=batched_pipeline,
+                    runtime_report=runtime,
+                )
+                self._prepared = bundle
+                return bundle
+            except Exception:
+                if batched_pipeline is not None:
+                    del batched_pipeline
+                if model is not None:
+                    del model
+                self._clear_device_cache()
+                raise
 
     def close(self) -> None:
         bundle = self._prepared

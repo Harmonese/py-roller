@@ -10,6 +10,7 @@ from pyroller.domain import AudioArtifact
 from pyroller.transcriber.ctc_utils import ctc_token_segments
 from pyroller.transcriber.engine_types import ENGINE_OUTPUT_SCHEMA_VERSION, EngineOutput, EngineSpan
 from pyroller.transcriber.engines.base import TranscriberEngine
+from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment
 
 logger = logging.getLogger("pyroller.transcriber")
 
@@ -36,6 +37,11 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         device: str = "cpu",
         target_sample_rate: int = 16000,
         trust_remote_code: bool = False,
+        hf_xet: str = "auto",
+        hf_proxy: str | None = None,
+        hf_etag_timeout: float | None = None,
+        hf_download_timeout: float | None = None,
+        hf_max_workers: int | None = None,
     ) -> None:
         self.backend_name = backend_name
         self.model_name = model_name
@@ -44,6 +50,13 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         self.device = device
         self.target_sample_rate = target_sample_rate
         self.trust_remote_code = trust_remote_code
+        self.hf_download_config = HFDownloadConfig(
+            xet=hf_xet,
+            proxy=hf_proxy,
+            etag_timeout=hf_etag_timeout,
+            download_timeout=hf_download_timeout,
+            max_workers=hf_max_workers,
+        )
         self._prepared: _PreparedWav2Vec2Bundle | None = None
 
     def _prepare_phase_count(self, language: str) -> int:
@@ -66,6 +79,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
             model_name=self.model_name,
             model_path=self.model_path,
             local_files_only=self.local_files_only,
+            hf_download_config=self.hf_download_config,
         )
         return resolver.resolve(materialize=materialize, stage=stage)
 
@@ -90,52 +104,53 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
                 stage.phase("reusing prepared wav2vec2 model")
             return self._prepared  # type: ignore[return-value]
 
-        try:
-            from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                f"{self.backend_name} dependencies are not installed. Install with: pip install librosa transformers torch"
-            ) from exc
+        with hf_download_environment(self.hf_download_config, local_files_only=self.local_files_only):
+            try:
+                from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError(
+                    f"{self.backend_name} dependencies are not installed. Install with: pip install librosa transformers torch"
+                ) from exc
 
-        self.close()
-        if stage is not None:
-            stage.phase("resolving transcriber model")
-        plan = self._build_resolution_plan(language, materialize=True, stage=stage)
-        if plan.resolved_model_dir is None:
-            raise RuntimeError(f"Unable to resolve local {self.backend_name} model directory.")
-        processor = None
-        model = None
-        try:
-            logger.info("Preparing %s model=%s from=%s device=%s", self.backend_name, self.model_name, plan.resolved_model_dir, self.device)
+            self.close()
             if stage is not None:
-                stage.phase("loading wav2vec2 model")
-            processor = Wav2Vec2Processor.from_pretrained(
-                str(plan.resolved_model_dir),
-                local_files_only=True,
-                trust_remote_code=self.trust_remote_code,
-            )
-            model = Wav2Vec2ForCTC.from_pretrained(
-                str(plan.resolved_model_dir),
-                local_files_only=True,
-                trust_remote_code=self.trust_remote_code,
-            ).to(self.device)
-            model.eval()
-            bundle = _PreparedWav2Vec2Bundle(
-                language=language,
-                plan=plan,
-                processor=processor,
-                model=model,
-                runtime_report=plan.runtime_record(),
-            )
-            self._prepared = bundle
-            return bundle
-        except Exception:
-            if model is not None:
-                del model
-            if processor is not None:
-                del processor
-            self._clear_device_cache()
-            raise
+                stage.phase("resolving transcriber model")
+            plan = self._build_resolution_plan(language, materialize=True, stage=stage)
+            if plan.resolved_model_dir is None:
+                raise RuntimeError(f"Unable to resolve local {self.backend_name} model directory.")
+            processor = None
+            model = None
+            try:
+                logger.info("Preparing %s model=%s from=%s device=%s", self.backend_name, self.model_name, plan.resolved_model_dir, self.device)
+                if stage is not None:
+                    stage.phase("loading wav2vec2 model")
+                processor = Wav2Vec2Processor.from_pretrained(
+                    str(plan.resolved_model_dir),
+                    local_files_only=True,
+                    trust_remote_code=self.trust_remote_code,
+                )
+                model = Wav2Vec2ForCTC.from_pretrained(
+                    str(plan.resolved_model_dir),
+                    local_files_only=True,
+                    trust_remote_code=self.trust_remote_code,
+                ).to(self.device)
+                model.eval()
+                bundle = _PreparedWav2Vec2Bundle(
+                    language=language,
+                    plan=plan,
+                    processor=processor,
+                    model=model,
+                    runtime_report=plan.runtime_record(),
+                )
+                self._prepared = bundle
+                return bundle
+            except Exception:
+                if model is not None:
+                    del model
+                if processor is not None:
+                    del processor
+                self._clear_device_cache()
+                raise
 
     def close(self) -> None:
         bundle = self._prepared

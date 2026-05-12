@@ -259,8 +259,12 @@ Useful options:
 - `--transcriber-model-name`: choose a model alias, model repo id, or an explicit local model path
   - for `faster_whisper`, bare aliases like `large-v2`, `large-v3`, or `turbo` resolve to `Systran/faster-whisper-*` snapshots
 - `--transcriber-local-files-only`: refuse network access and read only from local files/cache
+- `--transcriber-hf-xet {auto,on,off}`: control Hugging Face XET/CAS downloads; use `off` when XET is unreliable on your network
+- `--transcriber-hf-proxy URL`: route Hugging Face model downloads through an HTTP or SOCKS proxy
+- `--transcriber-hf-etag-timeout SECONDS` and `--transcriber-hf-download-timeout SECONDS`: raise Hugging Face metadata/file download timeouts on slow networks
+- `--transcriber-hf-max-workers INT`: reduce parallel snapshot workers when your network or proxy is unstable
 
-`audio-core` installs the project's official audio feature set around the faster-whisper and CTranslate2 local transcription stack.
+`audio-core` installs the project's official audio feature set around the faster-whisper and CTranslate2 local transcription stack, including SOCKS proxy support through `httpx[socks]`.
 
 Examples:
 
@@ -272,7 +276,32 @@ py-roller run   --stages t,p,a,w   --audio ./vocals.wav   --lyrics ./song.txt   
 py-roller run   --stages t,p,a,w   --audio ./vocals.wav   --lyrics ./song.txt   --transcriber-model-path ./models/transcriber   --transcriber-local-files-only   --output-roller ./song.lrc
 ```
 
-If you are on a restricted network, pre-populate the model store and then rerun with `--transcriber-local-files-only`.
+If you are on a restricted network, start with the smallest explicit override that matches your environment:
+
+```bash
+# Avoid the XET/CAS path when it hangs or fails behind your network.
+py-roller run \
+  --stages t,p,a,w \
+  --audio ./vocals.wav \
+  --lyrics ./song.txt \
+  --transcriber-hf-xet off \
+  --output-roller ./song.lrc
+```
+
+```bash
+# Use a local proxy and more forgiving timeouts for model downloads.
+py-roller run \
+  --stages t,p,a,w \
+  --audio ./vocals.wav \
+  --lyrics ./song.txt \
+  --transcriber-hf-proxy socks5://127.0.0.1:7890 \
+  --transcriber-hf-download-timeout 120 \
+  --transcriber-hf-etag-timeout 30 \
+  --transcriber-hf-max-workers 2 \
+  --output-roller ./song.lrc
+```
+
+You can also pre-populate the model store and then rerun with `--transcriber-local-files-only`.
 
 ## Writer behavior
 
@@ -467,6 +496,11 @@ shared:
   transcriber_device: cpu
   transcriber_model_path: ~/.cache/py-roller/models/transcriber
   transcriber_local_files_only: false
+  transcriber_hf_xet: auto
+  transcriber_hf_proxy: null
+  transcriber_hf_download_timeout: 120
+  transcriber_hf_etag_timeout: 30
+  transcriber_hf_max_workers: 2
   splitter_backend: demucs
   splitter_demucs_model: htdemucs
   splitter_demucs_device: cpu

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -9,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from pyroller.progress import StageProgress
+from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment
 
 logger = logging.getLogger("pyroller.transcriber")
 
@@ -57,6 +57,7 @@ class TranscriberResolutionPlan:
     download_root: Path | None = None
     auxiliary_assets: list[AuxiliaryAssetPlan] = field(default_factory=list)
     validations: list[str] = field(default_factory=list)
+    hf_download: dict[str, object] = field(default_factory=dict)
 
     def runtime_record(self) -> dict[str, Any]:
         return {
@@ -77,6 +78,7 @@ class TranscriberResolutionPlan:
             "network_reason": self.network_reason,
             "auxiliary_assets": [item.to_dict() for item in self.auxiliary_assets],
             "validations": list(self.validations),
+            "hf_download": dict(self.hf_download),
         }
 
 
@@ -89,12 +91,14 @@ class TranscriberModelResolver:
         model_name: str | None = None,
         model_path: str | os.PathLike[str] | None = None,
         local_files_only: bool = False,
+        hf_download_config: HFDownloadConfig | None = None,
     ) -> None:
         self.backend = str(backend).strip().lower()
         self.language = str(language).strip().lower()
         self.requested_model_name = str(model_name).strip() if model_name is not None and str(model_name).strip() else None
         self.model_store_root = Path(model_path).expanduser().resolve() if model_path is not None else default_transcriber_model_store_root().expanduser().resolve()
         self.local_files_only = bool(local_files_only)
+        self.hf_download_config = hf_download_config or HFDownloadConfig()
 
     def resolve(self, *, materialize: bool, stage: StageProgress | None = None) -> TranscriberResolutionPlan:
         self._ensure_store_layout()
@@ -121,6 +125,7 @@ class TranscriberModelResolver:
                 network_allowed=not self.local_files_only,
                 network_reason=None,
                 resolved_model_dir=local_ref,
+                hf_download=self.hf_download_config.summary(),
             )
             plan.validations.append("resolved explicit local model path")
             self._write_manifest(plan)
@@ -148,6 +153,7 @@ class TranscriberModelResolver:
             network_allowed=not self.local_files_only,
             network_reason=(None if self.local_files_only else "resolve or download Hugging Face snapshot"),
             provider_cache_root=provider_cache_root,
+            hf_download=self.hf_download_config.summary(),
         )
         existing = self._read_manifest_entry(self.backend, model_name)
         existing_dir = Path(existing.get("resolved_model_dir")).resolve() if existing and existing.get("resolved_model_dir") else None
@@ -169,12 +175,15 @@ class TranscriberModelResolver:
                         local_files_only=self.local_files_only,
                         log_label=f"transcriber model {model_name}",
                         stage=stage,
+                        hf_download_config=self.hf_download_config,
+                        **self.hf_download_config.snapshot_download_kwargs(),
                     )
                 ).resolve()
             except Exception as exc:
                 guidance = (
                     f"Unable to resolve transcriber model {model_name!r} into the local py-roller model store at {provider_cache_root}. "
-                    f"If you are on a restricted network, pre-download the model into {self.model_store_root} or pass --transcriber-local-files-only once the cache is ready."
+                    f"If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. "
+                    f"Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {exc}"
                 )
                 raise RuntimeError(guidance) from exc
             plan.resolved_model_dir = snapshot_dir
@@ -202,6 +211,7 @@ class TranscriberModelResolver:
             network_reason=(None if self.local_files_only else "resolve or download faster-whisper CTranslate2 snapshot"),
             provider_cache_root=provider_cache_root,
             download_root=provider_cache_root,
+            hf_download=self.hf_download_config.summary(),
         )
         repo_id = self._resolve_faster_whisper_repo_id(model_name)
         existing = self._read_manifest_entry(self.backend, model_name)
@@ -224,12 +234,15 @@ class TranscriberModelResolver:
                         local_files_only=self.local_files_only,
                         log_label=f"faster-whisper ASR model {repo_id}",
                         stage=stage,
+                        hf_download_config=self.hf_download_config,
+                        **self.hf_download_config.snapshot_download_kwargs(),
                     )
                 ).resolve()
             except Exception as exc:
                 guidance = (
                     f"Unable to resolve faster-whisper ASR model {repo_id!r} into the local py-roller model store at {provider_cache_root}. "
-                    f"If you are on a restricted network, pre-download the model into {self.model_store_root} or pass --transcriber-local-files-only once the cache is ready."
+                    f"If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. "
+                    f"Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {exc}"
                 )
                 raise RuntimeError(guidance) from exc
             plan.resolved_model_dir = snapshot_dir
@@ -286,21 +299,7 @@ class TranscriberModelResolver:
         manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-@contextlib.contextmanager
 def transcriber_provider_environment(plan: TranscriberResolutionPlan):
-    previous: dict[str, str | None] = {}
-    overrides: dict[str, str] = {}
-    if plan.local_files_only:
-        overrides["HF_HUB_OFFLINE"] = "1"
-        overrides["TRANSFORMERS_OFFLINE"] = "1"
-    for key, value in overrides.items():
-        previous[key] = os.environ.get(key)
-        os.environ[key] = value
-    try:
-        yield
-    finally:
-        for key, old_value in previous.items():
-            if old_value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = old_value
+    """Backward-compatible provider environment context for callers that need it."""
+    config = HFDownloadConfig.from_config({})
+    return hf_download_environment(config, local_files_only=plan.local_files_only)
