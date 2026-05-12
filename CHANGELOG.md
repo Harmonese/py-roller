@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.1] - 2026-05-12
+
+### Added
+- Renewed `install --help` and `doctor --help`.
+
+### Changed
+- Rewritten README and `--help` information.
+
+### Fixed
+- `constraints/*.txt` outdated on still using `Torch 2.5.1` instead of `Torch 2.6.0`.
+
 ## [0.5.0] - 2026-05-12
 
 ### Added

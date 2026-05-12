@@ -13,3 +13,4 @@ testdata_intermediate/
 testdata_out/
 models/
 *.pyc
+*.pyo
