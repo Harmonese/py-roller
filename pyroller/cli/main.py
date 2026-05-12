@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 import tempfile
 from dataclasses import replace
@@ -14,6 +15,15 @@ def _default_intermediate_dir() -> Path:
 
 def _default_transcriber_model_path() -> Path:
     return Path.home() / ".cache" / "py-roller" / "models" / "transcriber"
+
+def _positive_timeout_seconds_arg(value: str) -> int:
+    try:
+        seconds = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number of seconds") from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+    return max(1, int(math.ceil(seconds)))
 
 def _build_subparser_description(*, batch_mode: bool) -> str:
     io_line = "All inputs/outputs are directories unless --manifest is used." if batch_mode else "All inputs/outputs are file paths."
@@ -87,8 +97,8 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     hf_download = parser.add_argument_group("Hugging Face model download options")
     hf_download.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="XET/CAS download mode for Hugging Face models. Use off when XET hangs or fails on your network. Default: auto")
     hf_download.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890.")
-    hf_download.add_argument("--transcriber-hf-etag-timeout", type=float, default=None, help="Hugging Face metadata/etag timeout in seconds. Raise this on slow or high-latency networks.")
-    hf_download.add_argument("--transcriber-hf-download-timeout", type=float, default=None, help="Hugging Face file download timeout in seconds. Raise this when large model files time out.")
+    hf_download.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face metadata/etag timeout in seconds. Raise this on slow or high-latency networks.")
+    hf_download.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face file download timeout in seconds. Raise this when large model files time out.")
     hf_download.add_argument("--transcriber-hf-max-workers", type=int, default=None, help="Maximum parallel snapshot download workers. Lower values such as 1 or 2 can help fragile proxies.")
 
     parser_options = parser.add_argument_group("parser options (stage p)")

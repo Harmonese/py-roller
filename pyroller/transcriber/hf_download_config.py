@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import math
 import os
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -17,13 +18,13 @@ def _clean_optional_str(value: object) -> str | None:
     return text or None
 
 
-def _positive_float(value: object, *, name: str) -> float | None:
+def _positive_timeout_seconds(value: object, *, name: str) -> int | None:
     if value is None:
         return None
     out = float(value)
-    if out <= 0:
-        raise ValueError(f"{name} must be greater than 0.")
-    return out
+    if not math.isfinite(out) or out <= 0:
+        raise ValueError(f"{name} must be a finite number greater than 0.")
+    return max(1, int(math.ceil(out)))
 
 
 def _positive_int(value: object, *, name: str) -> int | None:
@@ -72,8 +73,8 @@ class HFDownloadConfig:
 
     xet: str = "auto"
     proxy: str | None = None
-    etag_timeout: float | None = None
-    download_timeout: float | None = None
+    etag_timeout: int | None = None
+    download_timeout: int | None = None
     max_workers: int | None = None
 
     def __post_init__(self) -> None:
@@ -83,8 +84,8 @@ class HFDownloadConfig:
         if self.xet not in {"auto", "on", "off"}:
             raise ValueError("hf_xet must be one of: auto, on, off.")
         self.proxy = _clean_optional_str(self.proxy)
-        self.etag_timeout = _positive_float(self.etag_timeout, name="hf_etag_timeout")
-        self.download_timeout = _positive_float(self.download_timeout, name="hf_download_timeout")
+        self.etag_timeout = _positive_timeout_seconds(self.etag_timeout, name="hf_etag_timeout")
+        self.download_timeout = _positive_timeout_seconds(self.download_timeout, name="hf_download_timeout")
         self.max_workers = _positive_int(self.max_workers, name="hf_max_workers")
 
     @classmethod

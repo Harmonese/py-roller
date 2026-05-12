@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.2] - 2026-05-12
+
+### Fixed
+- Fixed Hugging Face timeout environment overrides so `--transcriber-hf-etag-timeout` and `--transcriber-hf-download-timeout` are exported as integer seconds instead of float strings such as `120.0`, which could make `huggingface_hub` fail during transcriber preflight.
+- Normalized Hugging Face timeout CLI/config values to positive integer seconds while still accepting existing numeric inputs like `120.0` from integrations.
+
 ## [0.5.1] - 2026-05-12
 
 ### Added

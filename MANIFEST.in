@@ -1,4 +1,4 @@
-include README.md pyproject.toml
+include README.md CHANGELOG.md pyproject.toml
 recursive-include constraints *
 
 recursive-include pyroller/resources *
