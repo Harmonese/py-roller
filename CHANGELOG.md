@@ -14,6 +14,7 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ### Fixed
 - `constraints/*.txt` outdated on still using `Torch 2.5.1` instead of `Torch 2.6.0`.
+- `v0.5.0` can't be downloaded on PyPI due to GitHub Action failure, this version resolved this problem.
 
 ## [0.5.0] - 2026-05-12
 
