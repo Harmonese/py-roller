@@ -110,10 +110,10 @@ def _check_proxy_support() -> CheckResult:
     if not uses_socks:
         return CheckResult("proxy-socks", "ok", "no SOCKS proxy detected in environment")
     try:
-        importlib.import_module("socksio")
-        return CheckResult("proxy-socks", "ok", "SOCKS proxy detected and socksio is available")
+        importlib.import_module("socks")
+        return CheckResult("proxy-socks", "ok", "SOCKS proxy detected and PySocks is available")
     except Exception as exc:
-        return CheckResult("proxy-socks", "fail", f"SOCKS proxy detected but socksio is unavailable: {_format_exception(exc)} | Reinstall with: py-roller install")
+        return CheckResult("proxy-socks", "fail", f"SOCKS proxy detected but PySocks is unavailable: {_format_exception(exc)} | Reinstall with: py-roller install")
 
 
 def run_doctor() -> int:

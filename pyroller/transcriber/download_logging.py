@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -10,154 +8,6 @@ from pyroller.progress import StageProgress
 from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment, huggingface_download_error_hints
 
 logger = logging.getLogger("pyroller.transcriber")
-
-
-def _repo_cache_dir(cache_dir: str | Path, repo_id: str) -> Path:
-    safe = "models--" + repo_id.replace("/", "--")
-    candidate = Path(cache_dir) / safe
-    return candidate if candidate.exists() else Path(cache_dir)
-
-
-def _directory_size(path: Path) -> int:
-    if not path.exists():
-        return 0
-    total = 0
-    for item in path.rglob("*"):
-        try:
-            if item.is_file():
-                total += item.stat().st_size
-        except OSError:
-            continue
-    return total
-
-
-def _format_bytes(value: int | None) -> str:
-    if value is None:
-        return "unknown"
-    units = ["B", "KB", "MB", "GB", "TB"]
-    size = float(max(value, 0))
-    unit = units[0]
-    for unit in units:
-        if size < 1024 or unit == units[-1]:
-            break
-        size /= 1024
-    return f"{size:.2f} {unit}" if unit != "B" else f"{int(size)} B"
-
-
-def _repo_size_from_hub(repo_id: str, *, hf_download_config: HFDownloadConfig, local_files_only: bool, kwargs: dict[str, Any]) -> int | None:
-    if local_files_only:
-        return None
-    try:
-        from huggingface_hub import HfApi  # type: ignore
-
-        revision = kwargs.get("revision")
-        api = HfApi()
-        info = api.model_info(repo_id=repo_id, revision=revision, files_metadata=True)
-        total = 0
-        seen = False
-        for sibling in getattr(info, "siblings", []) or []:
-            size = getattr(sibling, "size", None)
-            if isinstance(size, int) and size > 0:
-                total += size
-                seen = True
-        return total if seen else None
-    except Exception as exc:
-        logger.debug("Unable to prefetch Hugging Face file sizes for %s: %s", repo_id, exc)
-        return None
-
-
-class _DownloadProgressWatcher:
-    def __init__(
-        self,
-        *,
-        repo_id: str,
-        cache_dir: str | Path,
-        stage: StageProgress | None,
-        bytes_total: int | None,
-        summary: dict[str, Any],
-        interval_seconds: float = 1.0,
-    ) -> None:
-        self.repo_id = repo_id
-        self.cache_dir = Path(cache_dir)
-        self.stage = stage
-        self.bytes_total = bytes_total
-        self.summary = summary
-        self.interval_seconds = interval_seconds
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._last_size: int | None = None
-        self._last_time: float | None = None
-
-    def __enter__(self):
-        if self.stage is not None:
-            self.stage.event(
-                "download_started",
-                stage="model-download",
-                repo_id=self.repo_id,
-                cache_dir=str(self.cache_dir),
-                bytes_total=self.bytes_total,
-                message=f"Downloading model cache for {self.repo_id}",
-                hf_download=self.summary,
-            )
-        self._thread = threading.Thread(target=self._run, name="pyroller-hf-download-progress", daemon=True)
-        self._thread.start()
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-        if self.stage is None:
-            return
-        current = _directory_size(_repo_cache_dir(self.cache_dir, self.repo_id))
-        event_type = "download_failed" if exc is not None else "download_completed"
-        self.stage.event(
-            event_type,
-            stage="model-download",
-            repo_id=self.repo_id,
-            cache_dir=str(self.cache_dir),
-            bytes_downloaded=current,
-            bytes_total=self.bytes_total,
-            percent=(current / self.bytes_total if self.bytes_total else None),
-            message=(f"Model cache download failed for {self.repo_id}" if exc is not None else f"Model cache ready for {self.repo_id}"),
-            hf_download=self.summary,
-        )
-
-    def _run(self) -> None:
-        while not self._stop.wait(self.interval_seconds):
-            self._emit_progress()
-
-    def _emit_progress(self) -> None:
-        if self.stage is None:
-            return
-        root = _repo_cache_dir(self.cache_dir, self.repo_id)
-        current = _directory_size(root)
-        now = time.monotonic()
-        speed: float | None = None
-        if self._last_size is not None and self._last_time is not None:
-            elapsed = max(now - self._last_time, 1e-6)
-            speed = max(0.0, (current - self._last_size) / elapsed)
-        self._last_size = current
-        self._last_time = now
-        total = self.bytes_total
-        percent = current / total if total else None
-        message = f"Downloading model cache: {_format_bytes(current)}"
-        if total:
-            message += f" / {_format_bytes(total)}"
-        if speed is not None:
-            message += f" at {_format_bytes(int(speed))}/s"
-        self.stage.event(
-            "download_progress",
-            stage="model-download",
-            repo_id=self.repo_id,
-            cache_dir=str(self.cache_dir),
-            bytes_downloaded=current,
-            bytes_total=total,
-            bytes_per_second=speed,
-            percent=percent,
-            message=message,
-            hf_download=self.summary,
-        )
 
 
 def snapshot_download_with_logging(
@@ -204,21 +54,13 @@ def snapshot_download_with_logging(
                 "huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio-core]"
             ) from exc
 
-        bytes_total = _repo_size_from_hub(repo_id, hf_download_config=config, local_files_only=local_files_only, kwargs=kwargs)
         try:
-            with _DownloadProgressWatcher(
+            resolved = snapshot_download(
                 repo_id=repo_id,
                 cache_dir=cache_dir,
-                stage=stage,
-                bytes_total=bytes_total,
-                summary=summary,
-            ):
-                resolved = snapshot_download(
-                    repo_id=repo_id,
-                    cache_dir=cache_dir,
-                    local_files_only=local_files_only,
-                    **kwargs,
-                )
+                local_files_only=local_files_only,
+                **kwargs,
+            )
         except Exception as exc:
             hints = huggingface_download_error_hints(exc)
             hint_text = f" Suggested fix: {'; '.join(hints)}." if hints else ""

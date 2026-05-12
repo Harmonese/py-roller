@@ -32,7 +32,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         *,
         backend_name: str,
         model_name: str,
-        model_path: str | Path | None = None,
+        model_path: str | None = None,
         local_files_only: bool = False,
         device: str = "cpu",
         target_sample_rate: int = 16000,
@@ -45,7 +45,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
     ) -> None:
         self.backend_name = backend_name
         self.model_name = model_name
-        self.model_path = str(model_path) if model_path is not None else None
+        self.model_path = model_path
         self.local_files_only = local_files_only
         self.device = device
         self.target_sample_rate = target_sample_rate
@@ -68,7 +68,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         return self._prepare_phase_count(language)
 
     def transcribe_phase_total(self, language: str) -> int:
-        return 1 + self._prepare_phase_count(language) + 2
+        return 1 + self._prepare_phase_count(language) + 3
 
     def _build_resolution_plan(self, language: str, *, materialize: bool, stage=None):
         from pyroller.transcriber.model_resolver import TranscriberModelResolver
@@ -216,6 +216,8 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
 
         token_segments = ctc_token_segments(predicted_ids, bundle.processor.tokenizer, blank_id=blank_id, time_offset=time_offset)
         spans = self._token_segments_to_spans(token_segments)
+        if stage is not None:
+            stage.phase(f"converted {len(spans)} token spans")
         metadata = {
             "engine_output_schema": ENGINE_OUTPUT_SCHEMA_VERSION,
             "engine": self.name,

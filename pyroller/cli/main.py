@@ -96,7 +96,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
 
     hf_download = parser.add_argument_group("Hugging Face model download options")
     hf_download.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="XET/CAS download mode for Hugging Face models. Use off when XET hangs or fails on your network. Default: auto")
-    hf_download.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890.")
+    hf_download.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads, e.g. http://127.0.0.1:7890, socks5://127.0.0.1:7890, or socks5h://127.0.0.1:7890. SOCKS proxies require PySocks.")
     hf_download.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face metadata/etag timeout in seconds. Raise this on slow or high-latency networks.")
     hf_download.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face file download timeout in seconds. Raise this when large model files time out.")
     hf_download.add_argument("--transcriber-hf-max-workers", type=int, default=None, help="Maximum parallel snapshot download workers. Lower values such as 1 or 2 can help fragile proxies.")
@@ -152,13 +152,13 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     )
     runtime.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Console and file log verbosity. Use DEBUG for full tracebacks.")
     runtime.add_argument(
-        "--progress-format",
-        choices=["human", "jsonl", "both"],
-        default="human",
+        "--progress",
+        choices=["auto", "plain", "json", "off"],
+        default="auto",
         help=(
-            "Progress output format. human keeps terminal-oriented progress; "
-            "jsonl emits machine-readable PYROLLER_EVENT JSON lines for GUI frontends; "
-            "both emits both. Default: human"
+            "Progress output mode. auto/plain emits human-readable progress through logging; "
+            "json emits one JSON progress event per line for WebUI integration; off disables progress events. "
+            "Default: auto"
         ),
     )
 
@@ -203,7 +203,8 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
         epilog=(
             "Examples:\n"
             "  py-roller run --stages t,p,a,w --audio vocals.wav --lyrics song.txt --language zh --output-roller song.lrc\n"
-            "  py-roller run --stages t,p,a,w --audio vocals.wav --lyrics song.txt --transcriber-hf-xet off --output-roller song.lrc"
+            "  py-roller run --stages t,p,a,w --audio vocals.wav --lyrics song.txt --transcriber-hf-xet off --output-roller song.lrc\n"
+            "  py-roller run --stages t,p,a,w --audio vocals.wav --lyrics song.txt --progress json --output-roller song.lrc"
         ),
         formatter_class=formatter,
     )
@@ -419,7 +420,7 @@ def _prepare_single_run_request(request):
     run_id = make_id("run")
     return replace(request, intermediate_dir=request.intermediate_dir / run_id)
 
-def _execute_run(request, *, progress_format: str = "human") -> None:
+def _execute_run(request, *, progress_mode: str = "auto") -> None:
     from pyroller.batch import batch_task_log_file
     from pyroller.logging_utils import configure_logging
     from pyroller.pipeline import ComposablePipelineRunner
@@ -428,7 +429,7 @@ def _execute_run(request, *, progress_format: str = "human") -> None:
     effective_request = _prepare_single_run_request(request)
     log_file = batch_task_log_file(effective_request.intermediate_dir)
     configure_logging(level=effective_request.log_level, log_file=log_file)
-    runner = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter(progress_format))
+    runner = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter(progress_mode))
     try:
         result = runner.run(effective_request)
     finally:
@@ -504,6 +505,7 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
         continue_on_error=args.continue_on_error,
         skip_existing=args.skip_existing,
         jobs=args.jobs,
+        progress_mode=args.progress,
     )
     _print_batch_summary(summary)
     return 1 if summary.failed else 0
@@ -526,7 +528,7 @@ def main() -> None:
 
         request = _build_request(args)
         if args.command == "run":
-            _execute_run(request, progress_format=args.progress_format)
+            _execute_run(request, progress_mode=args.progress)
             return
         if args.command == "batch":
             raise SystemExit(_execute_batch(args, request))

@@ -290,7 +290,7 @@ py-roller run \
   --output-roller ./song.lrc
 ```
 
-`audio-core` installs SOCKS support through `httpx[socks]`. If the environment was installed manually and SOCKS support is missing, run:
+`audio-core` installs SOCKS support for both Hugging Face's `requests` download path and any `httpx`-based tooling. If the environment was installed manually and SOCKS support is missing, run:
 
 ```bash
 py-roller install
@@ -299,7 +299,7 @@ py-roller install
 or install the missing dependency directly:
 
 ```bash
-pip install "httpx[socks]"
+pip install PySocks
 ```
 
 ## Writer behavior
@@ -458,6 +458,7 @@ shared:
   writer_backend: lrc_ms
   intermediate: ./tmp/py-roller-artifacts
   cleanup: on-success
+  progress: plain
   transcriber_device: cpu
   transcriber_model_path: ~/.cache/py-roller/models/transcriber
   transcriber_local_files_only: false
@@ -490,37 +491,47 @@ batch:
 
 ## Progress, logs, and cleanup
 
-The project exposes progress in two layers:
+The project exposes a reusable progress-reporting interface so CLI and GUI frontends can share stage updates without parsing backend-specific text.
 
-- human-readable logs for normal terminal use;
-- optional machine-readable JSONL events for GUI frontends such as lrc-roller.
-
-Use `--progress-format` to choose the progress output mode:
-
-```bash
-py-roller run ... --progress-format human   # default, terminal-friendly logs
-py-roller run ... --progress-format jsonl   # structured PYROLLER_EVENT lines
-py-roller run ... --progress-format both    # logs plus structured events
-```
-
-`jsonl` emits one parseable event per line with the `PYROLLER_EVENT ` prefix, for example:
+`run` and `batch` accept:
 
 ```text
-PYROLLER_EVENT {"type":"download_progress","stage":"model-download","repo_id":"Systran/faster-whisper-large-v2","bytes_downloaded":1534203904,"bytes_total":3086912962,"percent":49.7}
+--progress auto|plain|json|off
 ```
 
-This is intended for frontends that need reliable stage and download progress instead of parsing mixed logs from `tqdm`, Demucs, and `huggingface_hub`. Human-readable mode remains the default so existing CLI workflows are unchanged.
+Modes:
 
-Current progress coverage:
+- `auto`: default; currently emits the same human-readable progress as `plain`, and remains safe for non-TTY callers.
+- `plain`: logs phase progress such as `transcriber-preflight [2/3 phase] - checking/downloading model cache`.
+- `json`: emits one compact JSON progress event per line, suitable for WebUI integration.
+- `off`: disables progress events while keeping normal logs and final summaries.
 
-- model preflight and Hugging Face model download events, including cache path, proxy/XET settings, bytes downloaded, total bytes when known, and estimated speed;
-- splitter/Demucs wrapper progress;
-- filter phase progress;
-- transcriber phase progress, including faster-whisper segment-based inference updates when available;
-- parser, aligner, and writer stage events;
-- artifact write events and failure events.
+JSON progress events have this shape:
 
-In single-task `run`, human progress is shown as terminal logs/progress bars when supported. In `batch`, per-task progress is logged to avoid multiple workers fighting for one terminal. GUI frontends should prefer `--progress-format jsonl`.
+```json
+{"type":"progress","stage":"transcriber","status":"running","current":3,"total":5,"unit":"phase","message":"running transcription inference","elapsed":12.345}
+```
+
+Current coverage:
+
+- pipeline: overall stage completion across the selected contiguous chain.
+- splitter: Demucs wrapper phases.
+- filter: empty-chain forwarding or one phase per configured filter step.
+- transcriber preflight: backend loading, model resolution/cache, and model loading.
+- transcriber run: backend loading, model preparation, inference activity, and span conversion.
+- parser: parser loading, lyric parsing, and artifact writing when requested.
+- aligner: phase progress plus DP row progress for `global_dp_v1`.
+- writer: writer loading and output writing.
+
+Examples:
+
+```bash
+py-roller run ... --progress plain
+py-roller run ... --progress json
+py-roller run ... --progress off
+```
+
+In `batch`, per-task progress is still logged with task prefixes to avoid multiple workers fighting for one terminal.
 
 Intermediate files live under:
 
@@ -586,6 +597,6 @@ ps -ef | grep -E 'pyroller|demucs'
 `py-roller install` prefers the newest validated dependency line for this release:
 
 - Torch/TorchAudio/TorchVision are installed from the official 2.6.0 family for every built-in profile.
-- SOCKS proxy support is installed by default through `httpx[socks]`, so Hugging Face downloads do not fail merely because `socksio` is missing.
+- SOCKS proxy support is installed by default through `PySocks` (and `httpx[socks]` remains in the audio profile), so Hugging Face downloads can use `socks5://` and `socks5h://` proxy URLs.
 
 If you upgrade or override audio/transcriber packages manually, run `py-roller doctor` before using transcription-heavy pipelines.

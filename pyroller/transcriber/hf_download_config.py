@@ -133,11 +133,11 @@ class HFDownloadConfig:
         return overrides
 
     def ensure_runtime_requirements(self) -> None:
-        if _is_socks_proxy(self.proxy) and importlib.util.find_spec("socksio") is None:
+        if _is_socks_proxy(self.proxy) and importlib.util.find_spec("socks") is None:
             raise RuntimeError(
-                "A SOCKS proxy was configured with --transcriber-hf-proxy, but socksio is not installed. "
+                "A SOCKS proxy was configured with --transcriber-hf-proxy, but PySocks is not installed. "
                 "Install or repair the audio environment with: py-roller install. "
-                "Alternatively install the missing dependency with: pip install \"httpx[socks]\", "
+                "Alternatively install the missing dependency with: pip install PySocks, "
                 "or pass an HTTP proxy URL instead."
             )
 
@@ -174,8 +174,8 @@ def huggingface_download_error_hints(exc: BaseException) -> list[str]:
     hints: list[str] = []
     if any(token in text for token in ("xet", "cas", "cas-bridge", "cas-server", "hf_xet")):
         hints.append("try --transcriber-hf-xet off to avoid the XET/CAS download path")
-    if "socks" in text or "socksio" in text:
-        hints.append("install SOCKS support with py-roller install or pip install \"httpx[socks]\"")
+    if "socks" in text or "invalidschema" in text:
+        hints.append("install SOCKS support with py-roller install or pip install PySocks")
     if any(token in text for token in ("timeout", "timed out", "readtimeout", "connecttimeout")):
         hints.append("increase --transcriber-hf-download-timeout and/or --transcriber-hf-etag-timeout")
     if any(token in text for token in ("proxy", "connection", "network is unreachable", "name resolution")):

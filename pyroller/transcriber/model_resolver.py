@@ -9,7 +9,6 @@ from typing import Any
 
 from pyroller.progress import StageProgress
 from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment
-from pyroller.utils.json import json_default
 
 logger = logging.getLogger("pyroller.transcriber")
 
@@ -297,7 +296,7 @@ class TranscriberModelResolver:
         models = data.setdefault("models", {})
         key = f"{plan.backend}:{plan.effective_model_name}"
         models[key] = plan.runtime_record()
-        manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=json_default), encoding="utf-8")
+        manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def transcriber_provider_environment(plan: TranscriberResolutionPlan):
