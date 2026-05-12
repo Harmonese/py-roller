@@ -257,11 +257,11 @@ if transformers_version and parsed_torch is not None and parsed_torch < MIN_TORC
 uses_socks = any('socks' in os.environ.get(key, '').lower() for key in SOCKS_ENV_KEYS)
 if uses_socks:
     try:
-        importlib.import_module('socks')
+        importlib.import_module('socksio')
     except Exception as exc:
-        problems.append(f'SOCKS proxy detected but PySocks is unavailable: {{exc.__class__.__name__}}: {{exc}}')
+        problems.append(f'SOCKS proxy detected but socksio is unavailable: {{exc.__class__.__name__}}: {{exc}}')
     else:
-        notes.append('PySocks available for SOCKS proxy support')
+        notes.append('socksio available for SOCKS proxy support')
 
 if profile == 'cpu':
     if cuda_version is not None:
@@ -338,7 +338,7 @@ def run_install_command(args: argparse.Namespace) -> int:
     print(f"Install reason          : {decision.reason}")
     print(f"Audio core requirements : {', '.join(requirements)}")
     if _env_uses_socks_proxy():
-        print("Proxy note              : SOCKS proxy detected in environment; install validation will require PySocks")
+        print("Proxy note              : SOCKS proxy detected in environment; install validation will require socksio/httpx[socks]")
 
     if args.dry_run:
         for profile in decision.candidates:

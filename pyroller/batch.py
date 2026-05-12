@@ -13,7 +13,7 @@ from pyroller.logging_utils import configure_logging
 from pyroller.pipeline import ComposablePipelineRunner
 from pyroller.pipeline.execution_context import PipelineExecutionContext
 from pyroller.process_control import install_worker_signal_handlers
-from pyroller.progress import build_cli_progress_reporter
+from pyroller.progress import LoggingProgressReporter
 
 logger = logging.getLogger("pyroller.batch")
 
@@ -374,12 +374,12 @@ def _roller_suffix(writer_backend: object) -> str:
     return ".ass" if str(writer_backend or "lrc_ms") == "ass_karaoke" else ".lrc"
 
 
-def _run_single_batch_task(task: BatchTask, execution_context: PipelineExecutionContext | None = None, *, progress_mode: str = "plain") -> BatchTaskResult:
+def _run_single_batch_task(task: BatchTask, execution_context: PipelineExecutionContext | None = None) -> BatchTaskResult:
     log_file = batch_task_log_file(task.request.intermediate_dir)
     configure_logging(level=task.request.log_level, log_file=log_file)
     shared_context = execution_context is not None
     runner = ComposablePipelineRunner(
-        progress_reporter=build_cli_progress_reporter(progress_mode, prefix=f"[{task.stem}] "),
+        progress_reporter=LoggingProgressReporter(prefix=f"[{task.stem}] "),
         execution_context=execution_context or PipelineExecutionContext(),
     )
     try:
@@ -409,7 +409,7 @@ def _run_single_batch_task(task: BatchTask, execution_context: PipelineExecution
             runner.close()
 
 
-def _worker_loop(task_queue, result_queue, progress_mode: str = "plain") -> None:
+def _worker_loop(task_queue, result_queue) -> None:
     install_worker_signal_handlers()
     shared_context = PipelineExecutionContext()
     try:
@@ -417,7 +417,7 @@ def _worker_loop(task_queue, result_queue, progress_mode: str = "plain") -> None
             task = task_queue.get()
             if task is None:
                 return
-            result_queue.put(_run_single_batch_task(task, execution_context=shared_context, progress_mode=progress_mode))
+            result_queue.put(_run_single_batch_task(task, execution_context=shared_context))
     finally:
         shared_context.close()
 
@@ -430,7 +430,6 @@ class BatchRunner:
         continue_on_error: bool = False,
         skip_existing: bool = False,
         jobs: int = 1,
-        progress_mode: str = "plain",
     ) -> BatchRunSummary:
         results: list[BatchTaskResult] = []
         runnable: list[BatchTask] = []
@@ -444,7 +443,7 @@ class BatchRunner:
             shared_context = PipelineExecutionContext()
             try:
                 for position, task in enumerate(runnable):
-                    result = _run_single_batch_task(task, execution_context=shared_context, progress_mode=progress_mode)
+                    result = _run_single_batch_task(task, execution_context=shared_context)
                     results.append(result)
                     if result.status == "failed" and not continue_on_error:
                         for remaining in runnable[position + 1 :]:
@@ -456,7 +455,7 @@ class BatchRunner:
             ctx = mp.get_context("spawn")
             task_queue = ctx.Queue()
             result_queue = ctx.Queue()
-            workers = [ctx.Process(target=_worker_loop, args=(task_queue, result_queue, progress_mode), daemon=False) for _ in range(min(jobs, len(runnable)))]
+            workers = [ctx.Process(target=_worker_loop, args=(task_queue, result_queue), daemon=False) for _ in range(min(jobs, len(runnable)))]
             for worker in workers:
                 worker.start()
             for task in runnable:

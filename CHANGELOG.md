@@ -4,22 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
-## [0.5.4] - 2026-05-12
-
-### Added
-- Added `--progress auto|plain|json|off` to `run` and `batch`.
-- Added JSONL progress events for WebUI integrations, including status, stage, current/total, unit, message, and elapsed seconds.
-- Added overall pipeline progress and fuller stage progress for parser and writer phases.
-- Added transcriber activity updates for faster-whisper segment receipt and final span conversion.
-- Added `PySocks` to the audio runtime so `socks5://` and `socks5h://` Hugging Face proxies work through the `requests` download path.
-
-### Changed
-- Kept progress rendering non-bar based by default; `auto` now uses plain logging so non-TTY callers and WebUIs receive stable line-oriented output.
-- Updated `doctor` and `install` validation to check for `PySocks` rather than `socksio` when SOCKS proxies are configured.
-- Updated README and CLI help to document progress modes, reusable progress events, current HF download options, and SOCKS proxy dependencies.
+## [0.5.3-hf1] - 2026-05-12
 
 ### Fixed
-- Fixed the SOCKS proxy guidance to recommend `py-roller install` or `pip install PySocks`, matching the actual Hugging Face `requests` stack used during model downloads.
+- Fixed a transcriber coarse phase issue that causes problems in `lrc-roller`.
+
+## [0.5.3] - 2026-05-12
+
+### Added
+- Added `--progress-format {human,jsonl,both}` for structured progress output without breaking the default terminal-oriented CLI experience.
+- Added `PYROLLER_EVENT` JSONL progress events for GUI frontends, covering stage lifecycle, Hugging Face model download progress, artifact writes, and failures.
+- Added byte-level model-cache progress reporting for large Hugging Face downloads so frontends can distinguish active downloads from stalled jobs.
+- Added live faster-whisper transcription progress events based on yielded segment end times, so GUI frontends do not appear stuck at the final transcriber phase.
+
+### Fixed
+- Fixed timed_units artifact serialization when transcriber metadata contains pathlib Path values, such as --transcriber-model-path from the CLI.
+- Normalized transcriber engine metadata model_path values to strings for faster-whisper and wav2vec2/CTC backends.
+
 
 ## [0.5.2] - 2026-05-12
 
