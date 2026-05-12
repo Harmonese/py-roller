@@ -10,6 +10,7 @@ from typing import Any
 from pyroller.domain import AudioArtifact
 from pyroller.transcriber.engine_types import ENGINE_OUTPUT_SCHEMA_VERSION, EngineOutput, EngineSpan
 from pyroller.transcriber.engines.base import TranscriberEngine
+from pyroller.progress import progress_heartbeat
 from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment
 
 logger = logging.getLogger("pyroller.transcriber")

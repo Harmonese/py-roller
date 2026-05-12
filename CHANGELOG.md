@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.5] - 2026-05-12
+
+### Fixed
+- Fixed a major runtime issue that causes failure during the `transcriber` stage.
+
 ## [0.5.4] - 2026-05-12
 
 ### Added
@@ -21,6 +26,7 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ### Fixed
 - Reduced ambiguity between model download progress and Demucs progress by giving model downloads the `model_download` stage and Demucs separation the `splitter` stage.
+- Fixed a regression where faster-whisper transcription could fail with `NameError: progress_heartbeat is not defined` when structured heartbeat progress was enabled.
 
 ## [0.5.3] - 2026-05-12
 
