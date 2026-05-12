@@ -310,19 +310,24 @@ def _install_profile_packages(profile: InstallProfile, *, constraints_path: Path
 def build_install_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Install the official py-roller audio environment into the current Python environment. "
-            "Defaults to profile=auto, which chooses the best validated profile for this machine and automatically falls back to CPU if validation fails."
+            "Install or repair the official py-roller audio/transcriber runtime in the current Python environment. "
+            "The auto profile tries the validated CUDA 12.4 stack on supported Linux/NVIDIA machines and falls back to CPU if validation fails."
         )
     )
-    parser.add_argument("--profile", choices=("auto", "cpu", "cu124"), default="auto", help="Installation profile. Default: auto")
+    parser.add_argument(
+        "--profile",
+        choices=("auto", "cpu", "cu124"),
+        default="auto",
+        help="Runtime profile: auto selects the best validated option, cpu forces CPU wheels, cu124 forces CUDA 12.4 wheels. Default: auto",
+    )
     parser.add_argument(
         "--reset-torch",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Uninstall existing torch/torchaudio/torchvision before reinstalling the selected profile. Default: true",
+        help="Uninstall existing torch/torchaudio/torchvision first to avoid ABI/flavor mismatches. Default: true",
     )
-    parser.add_argument("--skip-doctor", action="store_true", help="Do not run 'py-roller doctor' after installation.")
-    parser.add_argument("--dry-run", action="store_true", help="Print commands without executing them.")
+    parser.add_argument("--skip-doctor", action="store_true", help="Skip the post-install 'py-roller doctor' validation step.")
+    parser.add_argument("--dry-run", action="store_true", help="Print the pip commands that would run, but do not install anything.")
     return parser
 
 

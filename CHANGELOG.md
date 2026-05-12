@@ -33,13 +33,13 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 - Improved error hints for XET/CAS failures, proxy failures, SOCKS dependency failures, and download timeouts.
 - Fixed configuration propagation so Hugging Face download options work from both CLI arguments and YAML config defaults.
 
-## [0.4.9-p] - 2026-05-11
+## [0.4.9-p]
 
 ### Changed
 - Published a preflight release for the upcoming `py-roller` v0.5.0 line.
 - Held the full v0.5.0 release for another round of tests.
 
-## [0.4.1] - 2026-04-10
+## [0.4.1]
 
 ### Added
 - Added configurable splitter backend selection via `--splitter-backend`.
@@ -48,7 +48,7 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 ### Changed
 - Modularized the splitter design so Demucs settings can be routed through backend-specific configuration instead of fixed pipeline defaults.
 
-## [0.4.0] - 2026-04-09
+## [0.4.0]
 
 ### Added
 - Initial public release of `py-roller`.

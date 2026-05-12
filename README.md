@@ -1,143 +1,113 @@
 # py-roller
 
-`py-roller` is a CLI Solution for automatic rolling lyrics generating.
+`py-roller` is a local command-line pipeline for generating rolling lyric files from audio and plain-text lyrics.
 
-To be specific, `py-roller` is a composable lyric-audio alignment pipeline CLI for staged execution, batch processing, and LRC/ASS export. Designed to support multiple local transcriber back-ends including faster-whisper and wav2vec2.
+It can split vocals, filter audio, transcribe local audio with faster-whisper or wav2vec2-style backends, parse lyrics, align lyric lines, and export LRC or ASS karaoke output.
 
 - Package name: `py-roller`
 - CLI command: `py-roller`
 - Python import package: `pyroller`
 
-## Quick overview
+## Install
 
-`py-roller` treats alignment as a contiguous stage chain:
-
-```text
-s -> f -> t -> p -> a -> w
-splitter -> filter -> transcriber -> parser -> aligner -> writer
-```
-
-Core modes:
-
-- `run`: execute one contiguous stage chain for one task
-- `batch`: execute the same contiguous stage chain across many tasks
-
-Core artifact types:
-
-- input audio / lyrics
-- intermediate vocal and filtered audio
-- `timed_units`
-- `parsed_lyrics`
-- `alignment_result`
-- roller outputs such as LRC or ASS
-
-## Installation
-
-From source, first install the lightweight base package:
+Use a fresh virtual environment when possible. First install the lightweight base package from source:
 
 ```bash
 pip install -e .
 ```
 
-Then let `py-roller` install the validated audio/transcriber runtime for your machine:
+Then install the validated audio/transcriber runtime:
 
 ```bash
 py-roller install
+py-roller doctor
 ```
 
-Profiles:
+`py-roller install` installs a pinned Torch/Torchaudio/TorchVision profile first, then installs the bundled `audio-core` requirements with matching constraints, validates the environment, and runs `py-roller doctor` unless `--skip-doctor` is passed.
 
-- `auto` (default): choose the best validated profile for this machine, then automatically fall back to CPU if validation fails
-- `cpu`: official CPU-only stable profile
-- `cu124`: official CUDA 12.4 profile
+Install profiles:
 
-Useful variants:
+- `auto` default: try the best validated profile for this machine, then fall back to CPU if validation fails.
+- `cpu`: force the CPU-only profile.
+- `cu124`: force the CUDA 12.4 profile.
+
+Useful install commands:
 
 ```bash
 py-roller install --profile cpu
 py-roller install --profile cu124
 py-roller install --dry-run
-py-roller doctor
-```
-
-Notes:
-
-- `py-roller install` still uses `pip` underneath, but it does **not** rely on pip to guess the correct Torch/Torchaudio flavor.
-- The command first installs the selected Torch profile, then installs the bundled `audio-core` runtime requirements with the matching constraints file, validates the resulting environment, and finally runs `py-roller doctor` unless you pass `--skip-doctor`.
-
-After installation, the CLI command is:
-
-```bash
-py-roller
+py-roller install --no-reset-torch
 ```
 
 ## Quick start
 
-### Full pipeline: audio + lyrics -> LRC
+Set `--language` explicitly whenever the song language is known. Use `zh` for Chinese, `en` for English, and `mul` only when you need the multilingual fallback.
+
+### Raw audio + lyrics -> LRC
 
 ```bash
 py-roller run \
   --stages s,f,t,p,a,w \
   --audio ./song.mp3 \
   --lyrics ./song.txt \
+  --language zh \
   --filter-chain noise_gate,dereverb \
   --output-roller ./song.lrc
-  --language zh # Choose as you like
 ```
 
-### Start from a prepared vocal track
+### Prepared vocal track + lyrics -> ASS karaoke
 
 ```bash
 py-roller run \
   --stages t,p,a,w \
   --audio ./vocals.wav \
   --lyrics ./song.txt \
+  --language zh \
   --writer-backend ass_karaoke \
   --output-roller ./song.ass
-  --language zh # Choose as you like
 ```
 
-### Batch processing by stem
+### Batch process directories by filename stem
 
 ```bash
 py-roller batch \
   --stages t,p,a,w \
   --audio ./audio_dir \
   --lyrics ./lyrics_dir \
+  --language zh \
   --output-roller ./out_dir
-  --language zh # Choose as you like
 ```
 
-## Core execution model
+## Pipeline model
 
-### Contiguous stage chains only
+`py-roller` runs a contiguous chain of stages in this fixed order:
 
-The CLI only accepts contiguous subchains of the canonical order.
+```text
+s -> f -> t -> p -> a -> w
+splitter -> filter -> transcriber -> parser -> aligner -> writer
+```
 
 Valid examples:
 
-- `s,f,t,p,a,w`
-- `t,p,a,w`
-- `a,w`
-- `w`
+- `s,f,t,p,a,w`: full pipeline from raw audio and lyrics.
+- `t,p,a,w`: start from prepared vocal/filtered audio.
+- `a,w`: start from existing `timed_units` and `parsed_lyrics` artifacts.
+- `w`: rewrite from an existing `alignment_result` artifact.
 
 Invalid examples:
 
-- `s,t,w`
-- `s,p,a`
+- `s,t,w`: skips required intermediate stages.
+- `s,p,a`: skips required intermediate stages.
 
-### Legal chain starts
+Legal chain-start inputs:
 
-Explicit artifact inputs are only valid at the correct chain start:
+- `--audio`: valid when the chain starts at `s`, `f`, or `t`.
+- `--lyrics`: required when the chain includes `p`.
+- `--timed-units` and `--parsed-lyrics`: valid when the chain starts at `a`.
+- `--alignment-result`: valid when the chain starts at `w`.
 
-- `--audio` is valid when the chain starts at `s`, `f`, or `t`
-- `--lyrics` is valid when the chain includes `p`
-- `--timed-units` and `--parsed-lyrics` are only valid when the chain starts at `a`
-- `--alignment-result` is only valid when the chain starts at `w`
-
-### Final outputs vs intermediate artifacts
-
-Final user-requested outputs are only the explicit `--output-*` paths:
+Final outputs are only the explicit `--output-*` paths:
 
 - `--output-vocal-audio`
 - `--output-filtered-audio`
@@ -146,31 +116,29 @@ Final user-requested outputs are only the explicit `--output-*` paths:
 - `--output-alignment-result`
 - `--output-roller`
 
-Everything else created under `--intermediate` is treated as intermediate state.
+Intermediate files under `--intermediate` are temporary working state unless `--cleanup never` is used.
 
 ## Common workflows
 
 ### Start from raw audio
-
-Use the full chain when you want splitting, filtering, transcription, alignment, and final writing in one command.
 
 ```bash
 py-roller run \
   --stages s,f,t,p,a,w \
   --audio ./song.mp3 \
   --lyrics ./song.txt \
+  --language zh \
   --output-roller ./song.lrc
 ```
 
-### Start from filtered or vocal audio
-
-Skip splitter/filter when you already have a suitable track for transcription.
+### Start from already-separated vocals
 
 ```bash
 py-roller run \
   --stages t,p,a,w \
   --audio ./vocals.wav \
   --lyrics ./song.txt \
+  --language zh \
   --output-roller ./song.lrc
 ```
 
@@ -184,7 +152,7 @@ py-roller run \
   --output-roller ./song.lrc
 ```
 
-For repeated or partially omitted lyrics, explicitly choose the repetition strategy:
+For repeated or partially omitted lyrics, choose a repetition mode explicitly:
 
 ```bash
 py-roller run \
@@ -197,9 +165,9 @@ py-roller run \
 
 `--aligner-repetition` accepts:
 
-- `none`: default; preserves the existing `global_dp_v1` behavior for lyrics where repeated lines are fully written out.
-- `few`: uses global DP as a proposal, then repairs weak repeated/omitted regions between trusted anchors with a local candidate lattice.
-- `full`: skips anchor reliance and uses per-line top-k candidate generation plus beam search for highly repetitive or anchorless songs.
+- `none`: default standard `global_dp_v1` behavior; best when repeated lyric lines are written out in full.
+- `few`: uses global DP as a proposal, then repairs sparse repeated or omitted regions between trusted anchors.
+- `full`: uses per-line candidate generation plus beam search for highly repetitive or anchorless songs.
 
 ### Rewrite only from an existing alignment result
 
@@ -211,9 +179,9 @@ py-roller run \
   --output-roller ./song.ass
 ```
 
-## Backend defaults
+## Backends and defaults
 
-Default backend selection is language-aware. Please note that the default selection of language is "mul" which works poorly when tested on both Chinese and English, please use the `--language` flag to specify the desired language if the language is directly supported.
+Backend selection is language-aware. The default language is `mul` for compatibility, but `zh` or `en` gives clearer transcriber/parser defaults when the song language is known.
 
 ### Transcriber defaults
 
@@ -221,10 +189,10 @@ Default backend selection is language-aware. Please note that the default select
 - `en` -> `faster_whisper`
 - `mul` -> `faster_whisper`
 
-Optional transcriber backends:
+Additional transcriber backends:
 
-- `zh` also supports `--transcriber-backend mms_phonetic` for the existing Chinese phonetic CTC path
-- `mul` also supports `--transcriber-backend wav2vec2_phoneme` for the existing multilingual phoneme-CTC fallback
+- `zh` also supports `--transcriber-backend mms_phonetic` for the Chinese phonetic CTC path.
+- `mul` also supports `--transcriber-backend wav2vec2_phoneme` for the multilingual phoneme CTC fallback.
 
 ### Parser defaults
 
@@ -237,63 +205,84 @@ Optional transcriber backends:
 - aligner backend -> `global_dp_v1`
 - aligner repetition mode -> `none`
 - writer backend -> `lrc_ms`
-- language -> `mul`
-- `writer_spacing` -> keep
-- `cleanup` -> `on-success`
+- writer spacing -> `keep`
+- cleanup policy -> `on-success`
 - transcriber model store -> `~/.cache/py-roller/models/transcriber`
 
-## Transcriber model store and offline behavior
+## Transcriber models and Hugging Face downloads
 
-Transcriber execution is local-only. `py-roller` does not send audio to a cloud transcription API.
+Transcriber execution is local. `py-roller` does not send audio to a cloud transcription API.
 
-Model resolution follows this order:
+Model resolution order:
 
-1. resolve `transcriber_model_name` (or the backend default model name)
-2. look for the model in the py-roller transcriber model store
-3. if not found and local-only mode is disabled, download or materialize it into the model store
-4. load the resolved local model path for inference
+1. Resolve `--transcriber-model-name`, or use the backend default model name.
+2. Look for the model in the py-roller transcriber model store.
+3. If not found and offline mode is not enabled, materialize/download the model into the model store.
+4. Load the resolved local model path for inference.
 
-Useful options:
+Useful model options:
 
-- `--transcriber-model-path`: choose the py-roller transcriber model store root
-- `--transcriber-model-name`: choose a model alias, model repo id, or an explicit local model path
-  - for `faster_whisper`, bare aliases like `large-v2`, `large-v3`, or `turbo` resolve to `Systran/faster-whisper-*` snapshots
-- `--transcriber-local-files-only`: refuse network access and read only from local files/cache
-- `--transcriber-hf-xet {auto,on,off}`: control Hugging Face XET/CAS downloads; use `off` when XET is unreliable on your network
-- `--transcriber-hf-proxy URL`: route Hugging Face model downloads through an HTTP or SOCKS proxy
-- `--transcriber-hf-etag-timeout SECONDS` and `--transcriber-hf-download-timeout SECONDS`: raise Hugging Face metadata/file download timeouts on slow networks
-- `--transcriber-hf-max-workers INT`: reduce parallel snapshot workers when your network or proxy is unstable
+- `--transcriber-model-path`: local model store root.
+- `--transcriber-model-name`: model alias, Hugging Face repo id, or explicit local path.
+- `--transcriber-local-files-only`: refuse network access and use only local files/cache.
 
-`audio-core` installs the project's official audio feature set around the faster-whisper and CTranslate2 local transcription stack, including SOCKS proxy support through `httpx[socks]`.
+For `faster_whisper`, aliases such as `large-v2`, `large-v3`, and `turbo` resolve to the corresponding `Systran/faster-whisper-*` snapshots.
 
-Examples:
+Example with a custom model store:
 
 ```bash
-py-roller run   --stages t,p,a,w   --audio ./vocals.wav   --lyrics ./song.txt   --transcriber-model-path ./models/transcriber   --output-roller ./song.lrc
-```
-
-```bash
-py-roller run   --stages t,p,a,w   --audio ./vocals.wav   --lyrics ./song.txt   --transcriber-model-path ./models/transcriber   --transcriber-local-files-only   --output-roller ./song.lrc
-```
-
-If you are on a restricted network, start with the smallest explicit override that matches your environment:
-
-```bash
-# Avoid the XET/CAS path when it hangs or fails behind your network.
 py-roller run \
   --stages t,p,a,w \
   --audio ./vocals.wav \
   --lyrics ./song.txt \
+  --language zh \
+  --transcriber-model-path ./models/transcriber \
+  --output-roller ./song.lrc
+```
+
+Offline run after the model already exists locally:
+
+```bash
+py-roller run \
+  --stages t,p,a,w \
+  --audio ./vocals.wav \
+  --lyrics ./song.txt \
+  --language zh \
+  --transcriber-model-path ./models/transcriber \
+  --transcriber-local-files-only \
+  --output-roller ./song.lrc
+```
+
+### Restricted or unstable networks
+
+Hugging Face model downloads can be affected by proxies, timeouts, and XET/CAS behavior. `py-roller` exposes the common controls directly:
+
+- `--transcriber-hf-xet {auto,on,off}`: use `off` when XET/CAS hangs or fails on your network.
+- `--transcriber-hf-proxy URL`: use one HTTP or SOCKS proxy for model downloads.
+- `--transcriber-hf-etag-timeout SECONDS`: metadata/etag timeout.
+- `--transcriber-hf-download-timeout SECONDS`: large file download timeout.
+- `--transcriber-hf-max-workers INT`: snapshot download parallelism; lower values such as `1` or `2` are often better for fragile proxies.
+
+Avoid XET/CAS when it is unreliable:
+
+```bash
+py-roller run \
+  --stages t,p,a,w \
+  --audio ./vocals.wav \
+  --lyrics ./song.txt \
+  --language zh \
   --transcriber-hf-xet off \
   --output-roller ./song.lrc
 ```
 
+Use a local SOCKS proxy and conservative download settings:
+
 ```bash
-# Use a local proxy and more forgiving timeouts for model downloads.
 py-roller run \
   --stages t,p,a,w \
   --audio ./vocals.wav \
   --lyrics ./song.txt \
+  --language zh \
   --transcriber-hf-proxy socks5://127.0.0.1:7890 \
   --transcriber-hf-download-timeout 120 \
   --transcriber-hf-etag-timeout 30 \
@@ -301,27 +290,40 @@ py-roller run \
   --output-roller ./song.lrc
 ```
 
-You can also pre-populate the model store and then rerun with `--transcriber-local-files-only`.
+`audio-core` installs SOCKS support through `httpx[socks]`. If the environment was installed manually and SOCKS support is missing, run:
+
+```bash
+py-roller install
+```
+
+or install the missing dependency directly:
+
+```bash
+pip install "httpx[socks]"
+```
 
 ## Writer behavior
 
 ### LRC
 
-The default writer is `lrc_ms` which writes LRC lines with millisecond precision. Other supported writer backends are:
+The default writer is `lrc_ms`, which writes LRC lines with millisecond precision.
 
-- `lrc_cs`: writes LRC lines with centiscond precision
-- `lrc_compressed`: writes LRC lines with millisecond precision, but compresses consecutive lines with the same timestamp
-- `ass_karaoke`: see below
+Supported writer backends:
+
+- `lrc_ms`: millisecond precision.
+- `lrc_cs`: centisecond precision.
+- `lrc_compressed`: millisecond precision, with consecutive identical timestamps compressed.
+- `ass_karaoke`: ASS dialogue output with karaoke timing tags.
 
 ### ASS karaoke
 
 `ass_karaoke` writes ASS dialogue lines with karaoke timing tags.
 
-Current defaults:
+Current behavior:
 
-- structural / spacing line output follows `writer_spacing` (`keep` by default)
-- display end time prefers matched unit timing instead of blindly extending to the next line
-- unmatched lines receive a short visible duration fallback
+- structural/spacing line output follows `--writer-spacing` (`keep` by default).
+- display end time prefers matched unit timing instead of blindly extending to the next line.
+- unmatched lines receive a short visible-duration fallback.
 
 Example:
 
@@ -332,40 +334,6 @@ py-roller run \
   --writer-backend ass_karaoke \
   --output-roller ./song.ass
 ```
-
-## Progress reporting
-
-The project exposes a reusable progress-reporting interface so CLI and future GUI frontends can share the same stage updates.
-
-Current behavior:
-
-- splitter: Demucs progress plus wrapper stage progress
-- filter: phase progress
-- transcriber: phase progress
-- aligner: phase progress plus DP row progress
-
-In single-task `run`, progress is shown as CLI progress bars when the terminal supports it. In `batch`, per-task progress is logged to avoid multiple workers fighting for one terminal.
-
-## Intermediate files and cleanup
-
-Intermediate files live under:
-
-```text
---intermediate/<task-id>/splitter
---intermediate/<task-id>/filter
---intermediate/<task-id>/logs
-```
-
-Default intermediate root:
-
-```text
-<system temp>/py-roller-artifacts
-```
-
-Cleanup policy:
-
-- `--cleanup on-success` keeps successful runs tidy by removing per-task intermediate directories
-- `--cleanup never` keeps intermediate audio and logs for inspection
 
 ## Batch mode
 
@@ -393,26 +361,23 @@ py-roller batch \
   --stages t,p,a,w \
   --audio ./audio_dir \
   --lyrics ./lyrics_dir \
+  --language zh \
   --output-roller ./out_dir
 ```
 
 ### Batch controls
 
-- `--jobs N`: maximum number of parallel workers
-- `--continue-on-error`: keep processing remaining tasks after failures
-- `--skip-existing`: skip tasks whose declared final outputs already exist
-- `--manifest jobs.yaml`: load explicit per-task paths from YAML instead of pairing by stem
+- `--jobs N`: maximum number of parallel workers.
+- `--continue-on-error`: keep processing remaining tasks after failures.
+- `--skip-existing`: skip tasks whose declared final outputs already exist.
+- `--manifest jobs.yaml`: load explicit per-task paths from YAML instead of pairing by stem.
 
-### Parallelism guidance
+Parallelism guidance:
 
-`--jobs` controls how many tasks run at the same time. This is separate from any model-level batch size.
+- CPU-only: start with `--jobs 1` or `--jobs 2`.
+- Single GPU: usually start with `--jobs 1`.
 
-Recommended starting point:
-
-- CPU-only: `--jobs 1` or `--jobs 2`
-- single GPU: usually `--jobs 1`
-
-## YAML manifest format
+### YAML manifest format
 
 Manifest mode is useful when filenames do not match cleanly by stem.
 
@@ -460,15 +425,15 @@ Optional helper key:
 
 Validation rules:
 
-- each task must be a mapping
-- unknown keys are rejected
-- inputs must match the selected chain start
-- outputs must be valid final outputs for the selected chain
-- task ids / stems must be unique
-- final output paths must not conflict across tasks
-- relative paths are resolved relative to the manifest file location
+- each task must be a mapping.
+- unknown keys are rejected.
+- inputs must match the selected chain start.
+- outputs must be valid final outputs for the selected chain.
+- task ids/stems must be unique.
+- final output paths must not conflict across tasks.
+- relative paths are resolved relative to the manifest file location.
 
-## YAML config for default CLI options
+## YAML config for CLI defaults
 
 Use `--config` to load YAML defaults.
 
@@ -480,15 +445,15 @@ built-in defaults < config YAML < explicit CLI arguments
 
 Section model:
 
-- `shared`: defaults applied to both `run` and `batch`
-- `run`: currently no extra keys beyond `shared`
-- `batch`: defaults for batch-only options such as `jobs` and `skip_existing`
+- `shared`: defaults applied to both `run` and `batch`.
+- `run`: currently no extra keys beyond `shared`.
+- `batch`: defaults for batch-only options such as `jobs` and `skip_existing`.
 
 Example:
 
 ```yaml
 shared:
-  language: mul
+  language: zh
   writer_spacing: keep
   writer_backend: lrc_ms
   intermediate: ./tmp/py-roller-artifacts
@@ -521,9 +486,55 @@ batch:
   continue_on_error: true
 ```
 
-`filter_chain` can be written either as a comma-separated string or as a YAML list.
+`filter_chain` can be written either as a comma-separated string or as a YAML list. Quote `on` or `off` for `transcriber_hf_xet` if your YAML parser treats them as booleans; py-roller also accepts boolean `true`/`false` there as `on`/`off` for convenience.
+
+## Progress, logs, and cleanup
+
+The project exposes a reusable progress-reporting interface so CLI and future GUI frontends can share stage updates.
+
+Current behavior:
+
+- splitter: Demucs progress plus wrapper stage progress.
+- filter: phase progress.
+- transcriber: phase progress.
+- aligner: phase progress plus DP row progress.
+
+In single-task `run`, progress is shown as CLI progress bars when the terminal supports it. In `batch`, per-task progress is logged to avoid multiple workers fighting for one terminal.
+
+Intermediate files live under:
+
+```text
+--intermediate/<task-id>/splitter
+--intermediate/<task-id>/filter
+--intermediate/<task-id>/logs
+```
+
+Default intermediate root:
+
+```text
+<system temp>/py-roller-artifacts
+```
+
+Cleanup policy:
+
+- `--cleanup on-success`: remove per-task intermediate directories after successful tasks.
+- `--cleanup never`: keep intermediate audio and logs for inspection.
 
 ## Troubleshooting
+
+### Check the environment
+
+```bash
+py-roller doctor
+```
+
+`doctor` checks Python, Torch, Torchaudio, faster-whisper, CTranslate2, transformers, SOCKS proxy support, Demucs, and librosa.
+
+If it reports a broken audio/transcriber environment, start with:
+
+```bash
+py-roller install
+```
 
 ### Interruption and child process cleanup
 
@@ -551,9 +562,9 @@ ps -ef | grep -E 'pyroller|demucs'
 
 ## Dependency policy
 
-`py-roller install` now prefers the newest validated dependency line instead of the older pre-2.6 Torch family. In practice this means:
+`py-roller install` prefers the newest validated dependency line for this release:
 
 - Torch/TorchAudio/TorchVision are installed from the official 2.6.0 family for every built-in profile.
-- SOCKS-proxy support is installed by default through `httpx[socks]`, so Hugging Face downloads do not fail just because `socksio` is missing.
+- SOCKS proxy support is installed by default through `httpx[socks]`, so Hugging Face downloads do not fail merely because `socksio` is missing.
 
-If you upgrade or override these packages manually, run `py-roller doctor` before using transcription-heavy pipelines.
+If you upgrade or override audio/transcriber packages manually, run `py-roller doctor` before using transcription-heavy pipelines.
