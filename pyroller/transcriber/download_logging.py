@@ -44,9 +44,9 @@ def _format_bytes(value: int | None) -> str:
     return f"{size:.2f} {unit}" if unit != "B" else f"{int(size)} B"
 
 
-def _repo_size_from_hub(repo_id: str, *, hf_download_config: HFDownloadConfig, local_files_only: bool, kwargs: dict[str, Any]) -> int | None:
+def _repo_file_stats_from_hub(repo_id: str, *, local_files_only: bool, kwargs: dict[str, Any]) -> dict[str, Any]:
     if local_files_only:
-        return None
+        return {"bytes_total": None, "largest_file": None, "largest_file_size": None, "file_count": None}
     try:
         from huggingface_hub import HfApi  # type: ignore
 
@@ -55,15 +55,28 @@ def _repo_size_from_hub(repo_id: str, *, hf_download_config: HFDownloadConfig, l
         info = api.model_info(repo_id=repo_id, revision=revision, files_metadata=True)
         total = 0
         seen = False
+        largest_file: str | None = None
+        largest_size = 0
+        file_count = 0
         for sibling in getattr(info, "siblings", []) or []:
+            filename = getattr(sibling, "rfilename", None) or getattr(sibling, "filename", None)
             size = getattr(sibling, "size", None)
+            file_count += 1
             if isinstance(size, int) and size > 0:
                 total += size
                 seen = True
-        return total if seen else None
+                if size > largest_size:
+                    largest_size = size
+                    largest_file = str(filename) if filename else None
+        return {
+            "bytes_total": total if seen else None,
+            "largest_file": largest_file,
+            "largest_file_size": largest_size if largest_size > 0 else None,
+            "file_count": file_count or None,
+        }
     except Exception as exc:
         logger.debug("Unable to prefetch Hugging Face file sizes for %s: %s", repo_id, exc)
-        return None
+        return {"bytes_total": None, "largest_file": None, "largest_file_size": None, "file_count": None}
 
 
 class _DownloadProgressWatcher:
@@ -75,6 +88,8 @@ class _DownloadProgressWatcher:
         stage: StageProgress | None,
         bytes_total: int | None,
         summary: dict[str, Any],
+        largest_file: str | None = None,
+        file_count: int | None = None,
         interval_seconds: float = 1.0,
     ) -> None:
         self.repo_id = repo_id
@@ -82,6 +97,8 @@ class _DownloadProgressWatcher:
         self.stage = stage
         self.bytes_total = bytes_total
         self.summary = summary
+        self.largest_file = largest_file
+        self.file_count = file_count
         self.interval_seconds = interval_seconds
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -92,9 +109,12 @@ class _DownloadProgressWatcher:
         if self.stage is not None:
             self.stage.event(
                 "download_started",
-                stage="model-download",
+                stage="model_download",
+                parent_stage="preflight",
                 repo_id=self.repo_id,
                 cache_dir=str(self.cache_dir),
+                file=self.largest_file,
+                file_count=self.file_count,
                 bytes_total=self.bytes_total,
                 message=f"Downloading model cache for {self.repo_id}",
                 hf_download=self.summary,
@@ -113,12 +133,16 @@ class _DownloadProgressWatcher:
         event_type = "download_failed" if exc is not None else "download_completed"
         self.stage.event(
             event_type,
-            stage="model-download",
+            stage="model_download",
+            parent_stage="preflight",
             repo_id=self.repo_id,
             cache_dir=str(self.cache_dir),
+            file=self.largest_file,
+            file_count=self.file_count,
             bytes_downloaded=current,
             bytes_total=self.bytes_total,
-            percent=(current / self.bytes_total if self.bytes_total else None),
+            progress=(current / self.bytes_total if self.bytes_total else None),
+            cached=exc is None and self.bytes_total is not None and current >= self.bytes_total,
             message=(f"Model cache download failed for {self.repo_id}" if exc is not None else f"Model cache ready for {self.repo_id}"),
             hf_download=self.summary,
         )
@@ -148,13 +172,16 @@ class _DownloadProgressWatcher:
             message += f" at {_format_bytes(int(speed))}/s"
         self.stage.event(
             "download_progress",
-            stage="model-download",
+            stage="model_download",
+            parent_stage="preflight",
             repo_id=self.repo_id,
             cache_dir=str(self.cache_dir),
+            file=self.largest_file,
+            file_count=self.file_count,
             bytes_downloaded=current,
             bytes_total=total,
             bytes_per_second=speed,
-            percent=percent,
+            progress=percent,
             message=message,
             hf_download=self.summary,
         )
@@ -204,7 +231,8 @@ def snapshot_download_with_logging(
                 "huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio-core]"
             ) from exc
 
-        bytes_total = _repo_size_from_hub(repo_id, hf_download_config=config, local_files_only=local_files_only, kwargs=kwargs)
+        file_stats = _repo_file_stats_from_hub(repo_id, local_files_only=local_files_only, kwargs=kwargs)
+        bytes_total = file_stats.get("bytes_total")
         try:
             with _DownloadProgressWatcher(
                 repo_id=repo_id,
@@ -212,6 +240,8 @@ def snapshot_download_with_logging(
                 stage=stage,
                 bytes_total=bytes_total,
                 summary=summary,
+                largest_file=file_stats.get("largest_file"),
+                file_count=file_stats.get("file_count"),
             ):
                 resolved = snapshot_download(
                     repo_id=repo_id,

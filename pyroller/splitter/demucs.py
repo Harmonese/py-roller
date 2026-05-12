@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from pyroller.splitter.base import Splitter
 from pyroller.utils.ids import make_id
 
 logger = logging.getLogger("pyroller.splitter")
+_DEMUCS_TQDM_RE = re.compile(r"(?P<percent>\d{1,3}(?:\.\d+)?)%\|.*?\|\s*(?P<current>\d+(?:\.\d+)?)/(?P<total>\d+(?:\.\d+)?)(?:\s+\[(?P<bracket>[^\]]+)\])?")
 
 
 class DemucsSplitter(Splitter):
@@ -60,7 +62,25 @@ class DemucsSplitter(Splitter):
             str(audio_path),
         ])
         logger.info("Running Demucs: %s", " ".join(cmd))
-        run_subprocess(cmd)
+
+        def _handle_demucs_output(record: str, _separator: str) -> None:
+            match = _DEMUCS_TQDM_RE.search(record)
+            if stage is None or match is None:
+                return
+            current = float(match.group("current"))
+            total = float(match.group("total"))
+            progress_value = max(0.0, min(1.0, current / total)) if total > 0 else None
+            stage.event(
+                "stage_progress",
+                stage="splitter",
+                current=current,
+                total=total,
+                unit="seconds",
+                progress=progress_value,
+                message=f"Separating vocals: {current:.1f} / {total:.1f} seconds",
+            )
+
+        run_subprocess(cmd, output_callback=_handle_demucs_output if stage is not None else None)
 
         stem_path = self.output_dir / self.model / audio_path.stem / f"{self.two_stems}.wav"
         if not stem_path.exists():

@@ -78,14 +78,23 @@ class ComposablePipelineRunner:
     def run(self, request: PipelineRequest) -> RunPipelineResult:
         stages = self._resolve_execution_plan(request)
         effective_language = self._resolve_language(request.language)
-        self._validate_request(request, stages)
-        self._preflight_environment(request, stages, effective_language)
-        self._ensure_intermediate_dir_ownership(request, stages)
-
-        registry: dict[str, Any] = {}
-        result = RunPipelineResult(executed_stages=[])
         success = False
+        result = RunPipelineResult(executed_stages=[])
+        self.progress_reporter.event(
+            "run_started",
+            stage="run",
+            stages=stages,
+            language=effective_language,
+            requested_language=request.language,
+            message="Pipeline run started",
+        )
         try:
+            self._validate_request(request, stages)
+            self._preflight_environment(request, stages, effective_language)
+            self._ensure_intermediate_dir_ownership(request, stages)
+
+            registry: dict[str, Any] = {}
+
             if request.audio_path is not None:
                 input_audio_role = self._infer_input_audio_role(stages)
                 source_audio = AudioArtifact(
@@ -187,19 +196,32 @@ class ComposablePipelineRunner:
                 result.transcription = transcription
                 if request.output_timed_units_path is not None:
                     transcription.save(request.output_timed_units_path)
+                    self._emit_artifact_written("transcriber", "timed_units", request.output_timed_units_path)
                     logger.info("Wrote timed_units artifact to %s", request.output_timed_units_path)
                 result.executed_stages.append("transcriber")
                 logger.info("Stage transcriber complete -> %d timed units", len(transcription.units))
 
             if "parser" in stages:
-                lyrics_document = self._require_registry_item(registry, "lyrics_text", "parser")
-                parser = get_lyrics_parser(effective_language, config=parser_cfg)
-                parsed_lyrics = parser.parse(lyrics_document, language=effective_language, tone_mode="ignore")
-                registry["parsed_lyrics"] = parsed_lyrics
-                result.parsed_lyrics = parsed_lyrics
-                if request.output_parsed_lyrics_path is not None:
-                    parsed_lyrics.save(request.output_parsed_lyrics_path)
-                    logger.info("Wrote parsed_lyrics artifact to %s", request.output_parsed_lyrics_path)
+                parser_stage = self.progress_reporter.stage("parser", total=2, unit="phase")
+                parser_failed = True
+                try:
+                    parser_stage.phase("parsing lyrics")
+                    lyrics_document = self._require_registry_item(registry, "lyrics_text", "parser")
+                    parser = get_lyrics_parser(effective_language, config=parser_cfg)
+                    parsed_lyrics = parser.parse(lyrics_document, language=effective_language, tone_mode="ignore")
+                    parser_stage.phase(f"parsed {len(parsed_lyrics.lines)} lyric lines")
+                    registry["parsed_lyrics"] = parsed_lyrics
+                    result.parsed_lyrics = parsed_lyrics
+                    if request.output_parsed_lyrics_path is not None:
+                        parsed_lyrics.save(request.output_parsed_lyrics_path)
+                        self._emit_artifact_written("parser", "parsed_lyrics", request.output_parsed_lyrics_path)
+                        logger.info("Wrote parsed_lyrics artifact to %s", request.output_parsed_lyrics_path)
+                    parser_failed = False
+                finally:
+                    if parser_failed:
+                        parser_stage.fail("parser failed")
+                    else:
+                        parser_stage.close("parser complete")
                 result.executed_stages.append("parser")
                 logger.info("Stage parser complete -> %d lines", len(parsed_lyrics.lines))
 
@@ -216,29 +238,70 @@ class ComposablePipelineRunner:
                 result.alignment = alignment
                 if request.output_alignment_result_path is not None:
                     alignment.save(request.output_alignment_result_path)
+                    self._emit_artifact_written("aligner", "alignment_result", request.output_alignment_result_path)
                     logger.info("Wrote alignment_result artifact to %s", request.output_alignment_result_path)
                 result.executed_stages.append("aligner")
                 logger.info("Stage aligner complete -> %d aligned lines", len(alignment.lines))
 
             if "writer" in stages:
-                alignment = self._require_registry_item(registry, "alignment_result", "writer")
-                output_path = request.output_roller_path
-                if output_path is None:
-                    raise ValueError("Writer stage requires --output-roller.")
-                writer = build_writer(
-                    backend_name=str(writer_cfg.get("backend")) if writer_cfg.get("backend") else None,
-                    config=writer_cfg,
-                )
-                logger.info("Using writer backend: %s", getattr(writer, "backend_name", getattr(writer, "name", writer.__class__.__name__)))
-                result.write_result = writer.write(alignment, output_path)
+                writer_stage = self.progress_reporter.stage("writer", total=2, unit="phase")
+                writer_failed = True
+                try:
+                    writer_stage.phase("writing output")
+                    alignment = self._require_registry_item(registry, "alignment_result", "writer")
+                    output_path = request.output_roller_path
+                    if output_path is None:
+                        raise ValueError("Writer stage requires --output-roller.")
+                    writer = build_writer(
+                        backend_name=str(writer_cfg.get("backend")) if writer_cfg.get("backend") else None,
+                        config=writer_cfg,
+                    )
+                    logger.info("Using writer backend: %s", getattr(writer, "backend_name", getattr(writer, "name", writer.__class__.__name__)))
+                    result.write_result = writer.write(alignment, output_path)
+                    writer_stage.phase("output written")
+                    self._emit_artifact_written("writer", "roller", result.write_result.output_path)
+                    writer_failed = False
+                finally:
+                    if writer_failed:
+                        writer_stage.fail("writer failed")
+                    else:
+                        writer_stage.close("writer complete")
                 result.executed_stages.append("writer")
                 logger.info("Stage writer complete -> %s", result.write_result.output_path)
 
             success = True
+            self.progress_reporter.event(
+                "run_completed",
+                stage="run",
+                stages=stages,
+                executed_stages=result.executed_stages,
+                message="Pipeline run completed",
+                done=True,
+            )
             return result
+        except Exception as exc:
+            self.progress_reporter.event(
+                "run_failed",
+                stage="run",
+                stages=stages,
+                message=f"Pipeline run failed: {exc.__class__.__name__}: {exc}",
+                error_type=exc.__class__.__name__,
+                error=str(exc),
+                failed=True,
+            )
+            raise
         finally:
             if success:
                 self._cleanup_intermediate_dir(request)
+
+    def _emit_artifact_written(self, stage: str, artifact_type: str, path: Path | None) -> None:
+        self.progress_reporter.event(
+            "artifact_written",
+            stage=stage,
+            artifact_type=artifact_type,
+            path=str(path) if path is not None else None,
+            message=f"Wrote {artifact_type} artifact" if path is not None else f"Wrote {artifact_type} artifact",
+        )
 
     def _cleanup_intermediate_dir(self, request: PipelineRequest) -> None:
         if request.cleanup != "on-success":
@@ -545,7 +608,7 @@ class ComposablePipelineRunner:
             transcriber = self._get_transcriber(effective_language, transcriber_cfg)
             logger.info("Running transcriber preflight for backend=%s language=%s", transcriber_backend, effective_language)
             preflight_stage = self.progress_reporter.stage(
-                "transcriber-preflight",
+                "preflight",
                 total=1 + transcriber.preflight_phase_total(effective_language),
                 unit="phase",
             )

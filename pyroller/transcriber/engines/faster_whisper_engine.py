@@ -238,34 +238,58 @@ class FasterWhisperEngine(TranscriberEngine):
                 message="Transcribing audio",
                 audio_duration=audio_duration_hint,
                 duration_after_vad=duration_after_vad,
-                percent=None,
+                progress=None,
             )
 
         segments = []
         last_percent_reported = -1
-        for segment in segments_iter:
-            segments.append(segment)
-            segment_end = self._float_or_none(self._field(segment, "end"))
-            percent = None
-            if audio_duration_hint and segment_end is not None:
-                percent = max(0.0, min(1.0, segment_end / audio_duration_hint))
-            percent_bucket = int((percent or 0.0) * 100)
-            if stage is not None and (percent is None or percent_bucket >= last_percent_reported + 2 or percent_bucket >= 100):
-                last_percent_reported = percent_bucket
-                stage.event(
-                    "stage_progress",
-                    stage="transcriber",
-                    message="Transcribing audio",
-                    completed=percent_bucket if percent is not None else len(segments),
-                    total=100 if percent is not None else 0,
-                    unit="%" if percent is not None else "segment",
-                    percent=percent,
-                    audio_time_processed=segment_end,
-                    audio_duration=audio_duration_hint,
-                    duration_after_vad=duration_after_vad,
-                    segments=len(segments),
-                    text=self._normalized_text(self._field(segment, "text")),
-                )
+        last_segment_end: float | None = None
+
+        def _heartbeat_payload() -> dict[str, object]:
+            payload: dict[str, object] = {
+                "message": "Still running transcription inference",
+                "segments": len(segments),
+                "audio_duration": audio_duration_hint,
+                "duration_after_vad": duration_after_vad,
+            }
+            if last_segment_end is not None:
+                payload["audio_time_processed"] = last_segment_end
+            if audio_duration_hint and last_segment_end is not None:
+                payload["progress"] = max(0.0, min(1.0, last_segment_end / audio_duration_hint))
+            return payload
+
+        with progress_heartbeat(
+            stage,
+            event_stage="transcriber",
+            message="Still running transcription inference",
+            interval_seconds=10.0,
+            payload_factory=_heartbeat_payload,
+        ):
+            for segment in segments_iter:
+                segments.append(segment)
+                segment_end = self._float_or_none(self._field(segment, "end"))
+                if segment_end is not None:
+                    last_segment_end = segment_end
+                progress_value = None
+                if audio_duration_hint and segment_end is not None:
+                    progress_value = max(0.0, min(1.0, segment_end / audio_duration_hint))
+                percent_bucket = int((progress_value or 0.0) * 100)
+                if stage is not None and (progress_value is None or percent_bucket >= last_percent_reported + 2 or percent_bucket >= 100):
+                    last_percent_reported = percent_bucket
+                    stage.event(
+                        "stage_progress",
+                        stage="transcriber",
+                        message="Transcribing audio",
+                        completed=percent_bucket if progress_value is not None else len(segments),
+                        total=100 if progress_value is not None else 0,
+                        unit="%" if progress_value is not None else "segment",
+                        progress=progress_value,
+                        audio_time_processed=segment_end,
+                        audio_duration=audio_duration_hint,
+                        duration_after_vad=duration_after_vad,
+                        segments=len(segments),
+                        text=self._normalized_text(self._field(segment, "text")),
+                    )
 
         if stage is not None:
             stage.update(advance=1, message="transcription inference complete")

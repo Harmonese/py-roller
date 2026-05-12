@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -22,10 +25,35 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _percent(completed: int | float, total: int | float) -> float | None:
+def _ratio(completed: int | float, total: int | float) -> float | None:
     if total <= 0:
         return None
     return max(0.0, min(1.0, float(completed) / float(total)))
+
+
+def _normalize_progress_value(value: Any) -> float | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    number = float(value)
+    if number > 1.0:
+        number /= 100.0
+    return max(0.0, min(1.0, number))
+
+
+def normalize_progress_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize progress event payloads while keeping old keys compatible.
+
+    ``progress`` is the canonical 0.0-1.0 value for frontends.  The older
+    ``percent`` key is kept as a compatibility alias during the 0.5.x line.
+    """
+
+    progress = _normalize_progress_value(payload.get("progress"))
+    if progress is None:
+        progress = _normalize_progress_value(payload.get("percent"))
+    if progress is not None:
+        payload["progress"] = progress
+        payload.setdefault("percent", progress)
+    return payload
 
 
 class StageProgress:
@@ -169,16 +197,19 @@ class JsonlStageProgress(StageProgress):
             completed=self.completed,
             total=self.total,
             unit=self.unit,
-            percent=_percent(self.completed, self.total),
+            progress=_ratio(self.completed, self.total),
             message=f"{self.name} started",
         )
 
     def _emit(self, event_type: str, **payload: Any) -> None:
         payload.setdefault("type", event_type)
-        payload.setdefault("time", _utc_now())
+        now = _utc_now()
+        payload.setdefault("timestamp", now)
+        payload.setdefault("time", now)  # compatibility alias used by early GUI builds
         payload.setdefault("stage", self.name)
         if self.prefix:
             payload.setdefault("prefix", self.prefix)
+        normalize_progress_payload(payload)
         print(_EVENT_PREFIX + json.dumps(payload, ensure_ascii=False, default=json_default), flush=True)
 
     def phase(self, message: str, advance: int = 1) -> None:
@@ -191,7 +222,7 @@ class JsonlStageProgress(StageProgress):
             completed=self.completed,
             total=self.total,
             unit=self.unit,
-            percent=_percent(self.completed, self.total),
+            progress=_ratio(self.completed, self.total),
             message=message or "",
         )
 
@@ -203,7 +234,7 @@ class JsonlStageProgress(StageProgress):
             completed=self.completed,
             total=self.total,
             unit=self.unit,
-            percent=1.0 if self.total > 0 else None,
+            progress=1.0 if self.total > 0 else None,
             message=message or f"{self.name} complete",
             done=True,
         )
@@ -214,7 +245,7 @@ class JsonlStageProgress(StageProgress):
             completed=self.completed,
             total=self.total,
             unit=self.unit,
-            percent=_percent(self.completed, self.total),
+            progress=_ratio(self.completed, self.total),
             message=message or f"{self.name} failed",
             failed=True,
         )
@@ -232,9 +263,12 @@ class JsonlProgressReporter(ProgressReporter):
 
     def event(self, event_type: str, **payload: Any) -> None:
         payload.setdefault("type", event_type)
-        payload.setdefault("time", _utc_now())
+        now = _utc_now()
+        payload.setdefault("timestamp", now)
+        payload.setdefault("time", now)
         if self.prefix:
             payload.setdefault("prefix", self.prefix)
+        normalize_progress_payload(payload)
         print(_EVENT_PREFIX + json.dumps(payload, ensure_ascii=False, default=json_default), flush=True)
 
 
@@ -273,6 +307,67 @@ class MultiProgressReporter(ProgressReporter):
     def event(self, event_type: str, **payload: Any) -> None:
         for reporter in self.reporters:
             reporter.event(event_type, **payload)
+
+
+class ProgressHeartbeat:
+    def __init__(
+        self,
+        stage: StageProgress | ProgressReporter | None,
+        *,
+        event_stage: str,
+        message: str,
+        interval_seconds: float = 10.0,
+        payload_factory: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
+        self.stage = stage
+        self.event_stage = event_stage
+        self.message = message
+        self.interval_seconds = interval_seconds
+        self.payload_factory = payload_factory
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_emit = 0.0
+
+    def __enter__(self) -> ProgressHeartbeat:
+        if self.stage is not None:
+            self._thread = threading.Thread(target=self._run, name=f"pyroller-{self.event_stage}-heartbeat", daemon=True)
+            self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            payload: dict[str, Any] = {}
+            if self.payload_factory is not None:
+                try:
+                    payload = self.payload_factory() or {}
+                except Exception as exc:  # pragma: no cover - diagnostic only
+                    payload = {"heartbeat_error": str(exc)}
+            payload.setdefault("stage", self.event_stage)
+            payload.setdefault("message", self.message)
+            payload.setdefault("seconds_since_last_progress", self.interval_seconds)
+            self.stage.event("heartbeat", **payload)
+
+
+def progress_heartbeat(
+    stage: StageProgress | ProgressReporter | None,
+    *,
+    event_stage: str,
+    message: str,
+    interval_seconds: float = 10.0,
+    payload_factory: Callable[[], dict[str, Any]] | None = None,
+) -> ProgressHeartbeat:
+    return ProgressHeartbeat(
+        stage,
+        event_stage=event_stage,
+        message=message,
+        interval_seconds=interval_seconds,
+        payload_factory=payload_factory,
+    )
 
 
 def _human_progress_reporter() -> ProgressReporter:

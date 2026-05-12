@@ -506,17 +506,21 @@ py-roller run ... --progress-format both    # logs plus structured events
 `jsonl` emits one parseable event per line with the `PYROLLER_EVENT ` prefix, for example:
 
 ```text
-PYROLLER_EVENT {"type":"download_progress","stage":"model-download","repo_id":"Systran/faster-whisper-large-v2","bytes_downloaded":1534203904,"bytes_total":3086912962,"percent":49.7}
+PYROLLER_EVENT {"type":"download_progress","stage":"model_download","parent_stage":"preflight","repo_id":"Systran/faster-whisper-large-v2","file":"model.bin","bytes_downloaded":1534203904,"bytes_total":3086912962,"progress":0.497}
 ```
 
 This is intended for frontends that need reliable stage and download progress instead of parsing mixed logs from `tqdm`, Demucs, and `huggingface_hub`. Human-readable mode remains the default so existing CLI workflows are unchanged.
 
+Structured events use `progress` as the canonical `0.0` to `1.0` field. A `percent` compatibility alias is still emitted for early GUI integrations. Standard stages are `preflight`, `model_download`, `splitter`, `filter`, `transcriber`, `parser`, `aligner`, and `writer`; model download events also include `parent_stage: preflight`.
+
 Current progress coverage:
 
-- model preflight and Hugging Face model download events, including cache path, proxy/XET settings, bytes downloaded, total bytes when known, and estimated speed;
-- splitter/Demucs wrapper progress;
+- run lifecycle events: `run_started`, `run_completed`, and `run_failed`;
+- model preflight and Hugging Face model download events, including cache path, proxy/XET settings, file count, largest file name, bytes downloaded, total bytes when known, and estimated speed;
+- heartbeat events during long model downloads and faster-whisper transcription periods;
+- splitter/Demucs seconds-based progress as structured `splitter` events;
 - filter phase progress;
-- transcriber phase progress, including faster-whisper segment-based inference updates when available;
+- transcriber phase progress, including faster-whisper segment count, last processed audio time, duration hints, and text previews when available;
 - parser, aligner, and writer stage events;
 - artifact write events and failure events.
 
@@ -556,6 +560,26 @@ If it reports a broken audio/transcriber environment, start with:
 ```bash
 py-roller install
 ```
+
+### Hugging Face model download progress
+
+For restricted networks, prefer disabling HF XET/CAS and using remote-DNS SOCKS:
+
+```bash
+py-roller run ... \
+  --transcriber-hf-xet off \
+  --transcriber-hf-proxy socks5h://127.0.0.1:9909
+```
+
+If a model has already been materialized into the py-roller model store, use local-only mode to avoid touching the network on later runs:
+
+```bash
+py-roller run ... \
+  --transcriber-model-path ~/.cache/py-roller/models/transcriber \
+  --transcriber-local-files-only
+```
+
+The Hugging Face file-count progress shown by `huggingface_hub` can appear stuck on large model files. Use `--progress-format jsonl` or `both` to get byte-level `download_progress` events with cache growth, speed, and total size when available.
 
 ### Interruption and child process cleanup
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
-from typing import Sequence
+from typing import Callable, Iterable, Sequence
 
 _LOCK = threading.Lock()
 _ACTIVE_PGIDS: set[int] = set()
@@ -81,15 +82,38 @@ def install_worker_signal_handlers() -> None:
     signal.signal(signal.SIGINT, _signal_handler)
 
 
-def run_subprocess(cmd: Sequence[str]) -> None:
+def _iter_subprocess_records(stream) -> Iterable[tuple[str, str]]:
+    buffer: list[str] = []
+    while True:
+        char = stream.read(1)
+        if char == "":
+            break
+        if char in {"\n", "\r"}:
+            if buffer:
+                yield "".join(buffer), char
+                buffer.clear()
+            continue
+        buffer.append(char)
+    if buffer:
+        yield "".join(buffer), "\n"
+
+
+def run_subprocess(cmd: Sequence[str], *, output_callback: Callable[[str, str], None] | None = None) -> None:
     popen_kwargs: dict[str, object] = {}
     if _IS_WINDOWS:
         popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         popen_kwargs["start_new_session"] = True
+    if output_callback is not None:
+        popen_kwargs.update({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT, "text": True, "bufsize": 1})
     proc = subprocess.Popen(list(cmd), **popen_kwargs)
     register_process_group(proc.pid)
     try:
+        if output_callback is not None and proc.stdout is not None:
+            for record, separator in _iter_subprocess_records(proc.stdout):
+                sys.stderr.write(record + separator)
+                sys.stderr.flush()
+                output_callback(record, separator)
         rc = proc.wait()
     except BaseException:
         terminate_registered_process_groups(grace_seconds=0.2)

@@ -4,10 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
-## [0.5.3-hf1] - 2026-05-12
+## [0.5.4] - 2026-05-12
+
+### Added
+- Formalized `PYROLLER_EVENT` JSONL progress events with canonical `progress` values from `0.0` to `1.0`, timestamp fields, and compatibility `percent` aliases for early GUI consumers.
+- Added normalized progress stages for GUI frontends: `preflight`, `model_download`, `splitter`, `filter`, `transcriber`, `parser`, `aligner`, and `writer`.
+- Added explicit run lifecycle events (`run_started`, `run_completed`, `run_failed`) and `artifact_written` events for saved pipeline artifacts.
+- Added heartbeat events for long-running model download and faster-whisper transcription periods so frontends can distinguish active work from stalled jobs.
+- Added Demucs splitter progress events derived from native seconds-based progress output.
+
+### Changed
+- Improved Hugging Face model download progress events with file count, largest file name, byte totals, cache directory, proxy/XET settings, and transfer speed.
+- Improved faster-whisper transcription progress events with segment count, last processed audio time, duration hints, and text previews when available.
+- Added parser and writer stage events so short final stages still appear in GUI progress timelines.
+- Updated README and CLI help coverage for `--progress-format`, restricted-network downloads, local-only model reuse, and progress troubleshooting.
 
 ### Fixed
-- Fixed a transcriber coarse phase issue that causes problems in `lrc-roller`.
+- Reduced ambiguity between model download progress and Demucs progress by giving model downloads the `model_download` stage and Demucs separation the `splitter` stage.
 
 ## [0.5.3] - 2026-05-12
 
