@@ -3,22 +3,30 @@ from __future__ import annotations
 import argparse
 import importlib.metadata as importlib_metadata
 import importlib.resources as resources
+import json
 import os
 import platform
+import queue
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+import threading
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
+
+from pyroller.utils.json import json_default
 
 PYTHON = sys.executable
 DIST_NAME = "py-roller"
 AUDIO_EXTRA = "audio-core"
 MIN_TORCH = (2, 6, 0)
 SOCKS_ENV_KEYS = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy")
+EVENT_PREFIX = "PYROLLER_EVENT "
 
 
 @dataclass(frozen=True)
@@ -54,19 +62,210 @@ class ProfileDecision:
     reason: str
 
 
+@dataclass(slots=True)
+class StepResult:
+    name: str
+    command: list[str]
+    status: str
+    return_code: int | None = None
+    duration_seconds: float = 0.0
+    dry_run: bool = False
+    message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "name": self.name,
+            "status": self.status,
+            "command": self.command,
+            "duration_seconds": round(self.duration_seconds, 3),
+            "dry_run": self.dry_run,
+        }
+        if self.return_code is not None:
+            payload["return_code"] = self.return_code
+        if self.message:
+            payload["message"] = self.message
+        return payload
+
+
+@dataclass(slots=True)
+class ValidationResult:
+    profile: str
+    ok: bool
+    message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"profile": self.profile, "ok": self.ok, "message": self.message}
+
+
+@dataclass(slots=True)
+class InstallReport:
+    requested_profile: str
+    decision_reason: str
+    python_executable: str
+    dry_run: bool
+    reset_torch: bool
+    skip_doctor: bool
+    requirements: list[str]
+    candidate_profiles: list[str]
+    steps: list[StepResult] = field(default_factory=list)
+    validations: list[ValidationResult] = field(default_factory=list)
+    doctor: dict[str, Any] | None = None
+    selected_profile: str | None = None
+    ok: bool = False
+    failed_step: str | None = None
+    message: str | None = None
+    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    completed_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "command": "install",
+            "requested_profile": self.requested_profile,
+            "selected_profile": self.selected_profile,
+            "candidate_profiles": self.candidate_profiles,
+            "decision_reason": self.decision_reason,
+            "python_executable": self.python_executable,
+            "dry_run": self.dry_run,
+            "reset_torch": self.reset_torch,
+            "skip_doctor": self.skip_doctor,
+            "requirements": self.requirements,
+            "steps": [step.to_dict() for step in self.steps],
+            "validations": [validation.to_dict() for validation in self.validations],
+            "doctor": self.doctor,
+            "failed_step": self.failed_step,
+            "message": self.message,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+        }
+
+
 class InstallValidationError(RuntimeError):
     pass
+
+
+class InstallReporter:
+    def __init__(self, *, progress_format: str = "human") -> None:
+        self.progress_format = progress_format
+
+    @property
+    def emit_human(self) -> bool:
+        return self.progress_format in {"human", "both"}
+
+    @property
+    def emit_jsonl(self) -> bool:
+        return self.progress_format in {"jsonl", "both"}
+
+    def human(self, text: str = "") -> None:
+        if self.emit_human:
+            print(text, flush=True)
+
+    def event(self, event_type: str, **payload: Any) -> None:
+        if not self.emit_jsonl:
+            return
+        payload.setdefault("type", event_type)
+        payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        print(EVENT_PREFIX + json.dumps(payload, ensure_ascii=False, default=json_default), flush=True)
+
+    def subprocess_output(self, *, step: str, line: str) -> None:
+        if self.emit_human:
+            print(line, flush=True)
+        if self.emit_jsonl:
+            self.event("install_subprocess_output", stage="install", step=step, line=line)
 
 
 def _command_text(cmd: Iterable[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
-def _run(cmd: list[str], *, dry_run: bool) -> None:
-    print("+", _command_text(cmd))
+def _run(cmd: list[str], *, step: str, dry_run: bool, reporter: InstallReporter) -> StepResult:
+    return _run_step(cmd, step=step, dry_run=dry_run, reporter=reporter)
+
+
+def _run_step(cmd: list[str], *, step: str, dry_run: bool, reporter: InstallReporter) -> StepResult:
+    started = time.monotonic()
+    command_text = _command_text(cmd)
+    reporter.human("+ " + command_text)
+    reporter.event("install_step_started", stage="install", step=step, command=cmd, message=command_text, dry_run=dry_run)
+    reporter.event("install_subprocess_started", stage="install", step=step, command=cmd, dry_run=dry_run)
     if dry_run:
-        return
-    subprocess.run(cmd, check=True)
+        duration = time.monotonic() - started
+        result = StepResult(name=step, command=cmd, status="skipped", return_code=0, duration_seconds=duration, dry_run=True, message="dry run")
+        reporter.event("install_subprocess_completed", stage="install", step=step, command=cmd, return_code=0, duration_seconds=duration, dry_run=True)
+        reporter.event("install_step_completed", stage="install", step=step, return_code=0, duration_seconds=duration, dry_run=True)
+        return result
+
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+    env.setdefault("PIP_PROGRESS_BAR", "off")
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+    line_queue: queue.Queue[str | None] = queue.Queue()
+
+    def _reader() -> None:
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                line_queue.put(line.rstrip("\n"))
+        finally:
+            line_queue.put(None)
+
+    thread = threading.Thread(target=_reader, name=f"pyroller-install-{step}-reader", daemon=True)
+    thread.start()
+
+    last_output = time.monotonic()
+    last_heartbeat = last_output
+    reader_done = False
+    while not reader_done:
+        try:
+            line = line_queue.get(timeout=1.0)
+        except queue.Empty:
+            now = time.monotonic()
+            if now - last_output >= 15.0 and now - last_heartbeat >= 15.0 and process.poll() is None:
+                reporter.event(
+                    "heartbeat",
+                    stage="install",
+                    step=step,
+                    message="subprocess is still running; no output recently",
+                    seconds_since_last_output=round(now - last_output, 1),
+                )
+                last_heartbeat = now
+            continue
+        if line is None:
+            reader_done = True
+            continue
+        last_output = time.monotonic()
+        last_heartbeat = last_output
+        if line:
+            reporter.subprocess_output(step=step, line=line)
+
+    return_code = process.wait()
+    thread.join(timeout=1.0)
+    duration = time.monotonic() - started
+    reporter.event(
+        "install_subprocess_completed",
+        stage="install",
+        step=step,
+        command=cmd,
+        return_code=return_code,
+        duration_seconds=duration,
+    )
+    if return_code != 0:
+        message = f"command failed with exit code {return_code}"
+        reporter.event("install_step_failed", stage="install", step=step, command=cmd, return_code=return_code, duration_seconds=duration, message=message)
+        raise subprocess.CalledProcessError(return_code, cmd)
+
+    result = StepResult(name=step, command=cmd, status="ok", return_code=return_code, duration_seconds=duration)
+    reporter.event("install_step_completed", stage="install", step=step, command=cmd, return_code=return_code, duration_seconds=duration)
+    return result
 
 
 def _has_nvidia_smi() -> bool:
@@ -179,7 +378,9 @@ def _env_uses_socks_proxy() -> bool:
     return any("socks" in os.environ.get(key, "").lower() for key in SOCKS_ENV_KEYS)
 
 
-def _validate_profile(profile: InstallProfile) -> tuple[bool, str]:
+def _validate_profile(profile: InstallProfile, reporter: InstallReporter | None = None) -> ValidationResult:
+    if reporter is not None:
+        reporter.event("install_validation_started", stage="install", profile=profile.name, message=f"Validating profile {profile.name}")
     script = f"""
 import importlib
 import importlib.metadata as importlib_metadata
@@ -284,27 +485,54 @@ print(json.dumps({{'ok': not problems, 'message': message}}))
     output = [line for line in (result.stdout or "").splitlines() if line.strip()]
     payload = output[-1] if output else ""
     if result.returncode != 0:
-        return False, (result.stderr or payload or "validation subprocess failed").strip()
-    try:
-        import json
-        data = json.loads(payload)
-        return bool(data.get("ok")), str(data.get("message", ""))
-    except Exception:
-        return False, payload or (result.stderr or "unable to parse validation output").strip()
+        validation = ValidationResult(profile.name, False, (result.stderr or payload or "validation subprocess failed").strip())
+    else:
+        try:
+            data = json.loads(payload)
+            validation = ValidationResult(profile.name, bool(data.get("ok")), str(data.get("message", "")))
+        except Exception:
+            validation = ValidationResult(profile.name, False, payload or (result.stderr or "unable to parse validation output").strip())
+    if reporter is not None:
+        reporter.event(
+            "install_validation_completed",
+            stage="install",
+            profile=profile.name,
+            ok=validation.ok,
+            message=validation.message,
+        )
+    return validation
 
 
-def _install_profile_packages(profile: InstallProfile, *, constraints_path: Path, requirements: Sequence[str], reset_torch: bool, dry_run: bool) -> None:
-    _run([PYTHON, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], dry_run=dry_run)
+def _install_profile_packages(
+    profile: InstallProfile,
+    *,
+    constraints_path: Path,
+    requirements: Sequence[str],
+    reset_torch: bool,
+    dry_run: bool,
+    reporter: InstallReporter,
+) -> list[StepResult]:
+    results: list[StepResult] = []
+    results.append(_run([PYTHON, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], step="upgrade_packaging_tools", dry_run=dry_run, reporter=reporter))
     if reset_torch:
-        _run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchaudio", "torchvision"], dry_run=dry_run)
-    _run(
-        [PYTHON, "-m", "pip", "install", "--force-reinstall", "--index-url", profile.index_url, *profile.torch_packages],
-        dry_run=dry_run,
+        results.append(_run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchaudio", "torchvision"], step="uninstall_existing_torch", dry_run=dry_run, reporter=reporter))
+    results.append(
+        _run(
+            [PYTHON, "-m", "pip", "install", "--force-reinstall", "--index-url", profile.index_url, *profile.torch_packages],
+            step="install_torch_stack",
+            dry_run=dry_run,
+            reporter=reporter,
+        )
     )
-    _run(
-        [PYTHON, "-m", "pip", "install", "--upgrade", "-c", str(constraints_path), *requirements],
-        dry_run=dry_run,
+    results.append(
+        _run(
+            [PYTHON, "-m", "pip", "install", "--upgrade", "-c", str(constraints_path), *requirements],
+            step="install_audio_requirements",
+            dry_run=dry_run,
+            reporter=reporter,
+        )
     )
+    return results
 
 
 def build_install_parser() -> argparse.ArgumentParser:
@@ -328,55 +556,189 @@ def build_install_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--skip-doctor", action="store_true", help="Skip the post-install 'py-roller doctor' validation step.")
     parser.add_argument("--dry-run", action="store_true", help="Print the pip commands that would run, but do not install anything.")
+    parser.add_argument(
+        "--progress-format",
+        choices=("human", "jsonl", "both"),
+        default="human",
+        help=(
+            "Install progress output format. human keeps terminal output; "
+            "jsonl emits machine-readable PYROLLER_EVENT lines; both emits both. Default: human"
+        ),
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=("human", "json"),
+        default="human",
+        help="Final install summary format. Use json for machine-readable install reports. Default: human",
+    )
     return parser
 
 
+def _finish_report(report: InstallReport, *, ok: bool, message: str | None = None, failed_step: str | None = None) -> None:
+    report.ok = ok
+    report.message = message
+    report.failed_step = failed_step
+    report.completed_at = datetime.now(timezone.utc).isoformat()
+
+
+def _print_final_report(report: InstallReport, output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2, default=json_default), flush=True)
+
+
 def run_install_command(args: argparse.Namespace) -> int:
+    reporter = InstallReporter(progress_format=args.progress_format)
     decision = detect_install_candidates(args.profile)
     requirements = _installed_audio_core_requirements()
-    print(f"Python                  : {PYTHON}")
-    print(f"Install reason          : {decision.reason}")
-    print(f"Audio core requirements : {', '.join(requirements)}")
-    if _env_uses_socks_proxy():
-        print("Proxy note              : SOCKS proxy detected in environment; install validation will require socksio/httpx[socks]")
+    report = InstallReport(
+        requested_profile=args.profile,
+        decision_reason=decision.reason,
+        python_executable=PYTHON,
+        dry_run=bool(args.dry_run),
+        reset_torch=bool(args.reset_torch),
+        skip_doctor=bool(args.skip_doctor),
+        requirements=requirements,
+        candidate_profiles=[profile.name for profile in decision.candidates],
+    )
 
-    if args.dry_run:
-        for profile in decision.candidates:
-            constraints_path = _materialize_constraint_file(profile.constraint_resource)
-            print(f"\nPlanned profile         : {profile.name} ({profile.label})")
-            print(f"Constraint file         : {constraints_path}")
-            _install_profile_packages(profile, constraints_path=constraints_path, requirements=requirements, reset_torch=args.reset_torch, dry_run=True)
-            if not args.skip_doctor:
-                _run([PYTHON, "-m", "pyroller.cli.main", "doctor"], dry_run=True)
-        return 0
+    reporter.event(
+        "install_started",
+        stage="install",
+        requested_profile=args.profile,
+        candidate_profiles=report.candidate_profiles,
+        python_executable=PYTHON,
+        dry_run=args.dry_run,
+        reset_torch=args.reset_torch,
+    )
+    reporter.human(f"Python                  : {PYTHON}")
+    reporter.human(f"Install reason          : {decision.reason}")
+    reporter.human(f"Audio core requirements : {', '.join(requirements)}")
+    if _env_uses_socks_proxy():
+        reporter.human("Proxy note              : SOCKS proxy detected in environment; install validation will require socksio/httpx[socks]")
+        reporter.event("install_proxy_detected", stage="install", message="SOCKS proxy detected in environment")
 
     errors: list[str] = []
-    for idx, profile in enumerate(decision.candidates, start=1):
-        constraints_path = _materialize_constraint_file(profile.constraint_resource)
-        print(f"\nInstalling profile {idx}/{len(decision.candidates)}: {profile.name} ({profile.label})")
-        print(f"Constraint file         : {constraints_path}")
-        try:
-            _install_profile_packages(profile, constraints_path=constraints_path, requirements=requirements, reset_torch=args.reset_torch, dry_run=False)
-        except subprocess.CalledProcessError as exc:
-            message = f"profile {profile.name} installation command failed with exit code {exc.returncode}"
-            errors.append(message)
-            print(f"Profile {profile.name} install failed: {message}")
-            if args.profile != "auto" or idx == len(decision.candidates):
-                raise
-            print("Falling back to the next profile candidate...")
-            continue
-
-        ok, validation_message = _validate_profile(profile)
-        if ok:
-            print(f"Validation succeeded for profile {profile.name}: {validation_message}")
-            if not args.skip_doctor:
-                _run([PYTHON, "-m", "pyroller.cli.main", "doctor"], dry_run=False)
+    try:
+        if args.dry_run:
+            for profile in decision.candidates:
+                constraints_path = _materialize_constraint_file(profile.constraint_resource)
+                reporter.human(f"\nPlanned profile         : {profile.name} ({profile.label})")
+                reporter.human(f"Constraint file         : {constraints_path}")
+                reporter.event(
+                    "install_profile_selected",
+                    stage="install",
+                    profile=profile.name,
+                    label=profile.label,
+                    constraint_file=constraints_path,
+                    dry_run=True,
+                )
+                report.steps.extend(
+                    _install_profile_packages(
+                        profile,
+                        constraints_path=constraints_path,
+                        requirements=requirements,
+                        reset_torch=args.reset_torch,
+                        dry_run=True,
+                        reporter=reporter,
+                    )
+                )
+                if not args.skip_doctor:
+                    report.steps.append(_run([PYTHON, "-m", "pyroller.cli.main", "doctor", "--output-format", "json"], step="doctor", dry_run=True, reporter=reporter))
+            _finish_report(report, ok=True, message="dry run complete")
+            reporter.event("install_completed", stage="install", ok=True, dry_run=True, message="dry run complete")
+            _print_final_report(report, args.output_format)
             return 0
 
-        errors.append(f"profile {profile.name} validation failed: {validation_message}")
-        print(f"Profile {profile.name} validation failed: {validation_message}")
-        if args.profile != "auto" or idx == len(decision.candidates):
-            raise InstallValidationError(validation_message)
-        print("Falling back to the next profile candidate...")
+        for idx, profile in enumerate(decision.candidates, start=1):
+            constraints_path = _materialize_constraint_file(profile.constraint_resource)
+            reporter.human(f"\nInstalling profile {idx}/{len(decision.candidates)}: {profile.name} ({profile.label})")
+            reporter.human(f"Constraint file         : {constraints_path}")
+            reporter.event(
+                "install_profile_selected",
+                stage="install",
+                profile=profile.name,
+                label=profile.label,
+                profile_index=idx,
+                profile_count=len(decision.candidates),
+                constraint_file=constraints_path,
+            )
+            try:
+                report.steps.extend(
+                    _install_profile_packages(
+                        profile,
+                        constraints_path=constraints_path,
+                        requirements=requirements,
+                        reset_torch=args.reset_torch,
+                        dry_run=False,
+                        reporter=reporter,
+                    )
+                )
+            except subprocess.CalledProcessError as exc:
+                failed_step = "subprocess"
+                if report.steps:
+                    failed_step = report.steps[-1].name
+                message = f"profile {profile.name} installation command failed with exit code {exc.returncode}"
+                errors.append(message)
+                reporter.human(f"Profile {profile.name} install failed: {message}")
+                if args.profile != "auto" or idx == len(decision.candidates):
+                    _finish_report(report, ok=False, message=message, failed_step=failed_step)
+                    reporter.event("install_failed", stage="install", profile=profile.name, ok=False, message=message, failed_step=failed_step)
+                    _print_final_report(report, args.output_format)
+                    return 1
+                reporter.human("Falling back to the next profile candidate...")
+                reporter.event("install_profile_fallback", stage="install", profile=profile.name, message=message)
+                continue
 
-    raise InstallValidationError("; ".join(errors) if errors else "no validated install profile succeeded")
+            validation = _validate_profile(profile, reporter=reporter)
+            report.validations.append(validation)
+            if validation.ok:
+                report.selected_profile = profile.name
+                reporter.human(f"Validation succeeded for profile {profile.name}: {validation.message}")
+                if not args.skip_doctor:
+                    reporter.event("install_doctor_started", stage="install", profile=profile.name)
+                    from pyroller.cli.doctor import build_doctor_report, print_doctor_human
+
+                    doctor_report = build_doctor_report()
+                    report.doctor = doctor_report.to_dict()
+                    if reporter.emit_human:
+                        print_doctor_human(doctor_report)
+                    reporter.event(
+                        "install_doctor_completed",
+                        stage="install",
+                        profile=profile.name,
+                        ok=doctor_report.ok,
+                        checks=[item.to_dict() for item in doctor_report.checks],
+                    )
+                    if not doctor_report.ok:
+                        message = "post-install doctor reported problems"
+                        _finish_report(report, ok=False, message=message, failed_step="doctor")
+                        reporter.event("install_failed", stage="install", profile=profile.name, ok=False, message=message, failed_step="doctor")
+                        _print_final_report(report, args.output_format)
+                        return 1
+                _finish_report(report, ok=True, message=f"profile {profile.name} installed and validated")
+                reporter.event("install_completed", stage="install", profile=profile.name, ok=True, message=report.message)
+                _print_final_report(report, args.output_format)
+                return 0
+
+            errors.append(f"profile {profile.name} validation failed: {validation.message}")
+            reporter.human(f"Profile {profile.name} validation failed: {validation.message}")
+            if args.profile != "auto" or idx == len(decision.candidates):
+                message = validation.message or "validation failed"
+                _finish_report(report, ok=False, message=message, failed_step="validation")
+                reporter.event("install_failed", stage="install", profile=profile.name, ok=False, message=message, failed_step="validation")
+                _print_final_report(report, args.output_format)
+                return 1
+            reporter.human("Falling back to the next profile candidate...")
+            reporter.event("install_profile_fallback", stage="install", profile=profile.name, message=validation.message)
+
+        message = "; ".join(errors) if errors else "no validated install profile succeeded"
+        _finish_report(report, ok=False, message=message, failed_step="profile_selection")
+        reporter.event("install_failed", stage="install", ok=False, message=message, failed_step="profile_selection")
+        _print_final_report(report, args.output_format)
+        return 1
+    except Exception as exc:
+        message = f"{exc.__class__.__name__}: {exc}"
+        _finish_report(report, ok=False, message=message, failed_step=report.failed_step or "unexpected")
+        reporter.event("install_failed", stage="install", ok=False, message=message, failed_step=report.failed_step)
+        _print_final_report(report, args.output_format)
+        raise

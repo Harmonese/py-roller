@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.6] - 2026-05-13
+
+### Added
+- Added `py-roller doctor --output-format json` for machine-readable runtime health reports.
+- Added `py-roller install --progress-format {human,jsonl,both}` so GUI frontends can follow install lifecycle, selected profiles, subprocess steps, validation, doctor, completion, failure, and heartbeat events via `PYROLLER_EVENT` JSONL lines.
+- Added `py-roller install --output-format {human,json}` for final machine-readable install reports containing requested/selected profiles, step results, validation results, and doctor summaries.
+- Added install subprocess heartbeat events so frontends can distinguish active long-running pip operations from stalled jobs.
+
+### Changed
+- Reworked `doctor` internals around reusable report collection, human rendering, and JSON serialization without changing the default terminal checklist.
+- Reworked `install` subprocess execution from `subprocess.run` to streamed `Popen` execution so output and machine-readable events can be emitted while commands are running.
+- Updated CLI help and README coverage for doctor JSON reports and install JSONL/JSON integration modes.
+
 ## [0.5.5] - 2026-05-12
 
 ### Fixed

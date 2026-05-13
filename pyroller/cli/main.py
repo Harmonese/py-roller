@@ -233,7 +233,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
         add_help=False,
     )
 
-    subparsers.add_parser(
+    doctor = subparsers.add_parser(
         "doctor",
         help="Inspect the local audio, transcriber, and proxy environment.",
         description=(
@@ -241,6 +241,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
             "demucs, librosa, and SOCKS proxy support import successfully in the current environment."
         ),
         formatter_class=formatter,
+    )
+    doctor.add_argument(
+        "--output-format",
+        choices=["human", "json"],
+        default="human",
+        help="Doctor report output format. human prints the terminal checklist; json prints a machine-readable report. Default: human",
     )
     return parser, run, batch
 
@@ -519,7 +525,7 @@ def main() -> None:
         args = parser.parse_args(raw_argv)
         if args.command == "doctor":
             from pyroller.cli.doctor import run_doctor
-            raise SystemExit(run_doctor())
+            raise SystemExit(run_doctor(output_format=args.output_format))
         if args.command == "install":
             from pyroller.cli.install import run_install_command
             raise SystemExit(run_install_command(args))

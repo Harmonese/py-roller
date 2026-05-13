@@ -38,7 +38,33 @@ py-roller install --profile cpu
 py-roller install --profile cu124
 py-roller install --dry-run
 py-roller install --no-reset-torch
+py-roller doctor --output-format json
+py-roller install --progress-format jsonl --output-format json
 ```
+
+### Machine-readable runtime checks and install progress
+
+`doctor` can print a machine-readable report for GUI frontends and automated runtime checks:
+
+```bash
+py-roller doctor --output-format json
+```
+
+The JSON report includes `ok`, the Python executable and platform, one entry per runtime check, and a `suggested_next_step` when the environment needs repair. The default remains the terminal checklist:
+
+```bash
+py-roller doctor --output-format human
+```
+
+`install` now separates live progress from the final summary:
+
+```bash
+py-roller install --progress-format human --output-format human   # default
+py-roller install --progress-format jsonl --output-format json    # GUI-friendly
+py-roller install --progress-format both --output-format json     # debug both streams
+```
+
+`--progress-format jsonl` emits `PYROLLER_EVENT` lines for install lifecycle events, selected profiles, subprocess starts/completions, subprocess output, validation, doctor, completion, failures, and heartbeat messages when a pip subprocess is still running without output. `--output-format json` prints a final install report containing the requested profile, selected profile, step results, validation results, and doctor summary when doctor is run.
 
 ## Quick start
 
@@ -551,6 +577,12 @@ Cleanup policy:
 
 ```bash
 py-roller doctor
+```
+
+For integrations, use JSON output:
+
+```bash
+py-roller doctor --output-format json
 ```
 
 `doctor` checks Python, Torch, Torchaudio, faster-whisper, CTranslate2, transformers, SOCKS proxy support, Demucs, and librosa.
