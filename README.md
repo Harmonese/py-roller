@@ -234,6 +234,8 @@ Additional transcriber backends:
 - writer spacing -> `keep`
 - cleanup policy -> `on-success`
 - transcriber model store -> `~/.cache/py-roller/models/transcriber`
+- transcriber device -> auto-detected (CUDA GPU if available, otherwise CPU)
+- transcriber VAD filter -> enabled (skips silence to speed up transcription)
 
 ## Transcriber models and Hugging Face downloads
 
@@ -326,6 +328,36 @@ or install the missing dependency directly:
 
 ```bash
 pip install "httpx[socks]"
+```
+
+### VAD filtering
+
+faster-whisper VAD (Voice Activity Detection) filtering skips silent sections during transcription, reducing processing time by 20–40% for songs with pauses or instrumental breaks. It is enabled by default.
+
+Disable VAD filtering if you need word-level timestamps for every segment, or if the VAD model is cutting audio too aggressively:
+
+```bash
+py-roller run \
+  --stages t,p,a,w \
+  --audio ./vocals.wav \
+  --lyrics ./song.txt \
+  --language zh \
+  --no-transcriber-vad-filter \
+  --output-roller ./song.lrc
+```
+
+### GPU auto-detection
+
+When `--transcriber-device` is not explicitly set, `py-roller` automatically checks for an available CUDA GPU. If found, the transcriber defaults to `device=cuda` with `compute_type=float16` for significantly faster inference. This can be overridden with `--transcriber-device cpu` or `--transcriber-compute-type int8`.
+
+### Model pre-download
+
+Pre-download a transcriber model into the local model store so that later pipeline runs can use `--transcriber-local-files-only` without touching the network:
+
+```bash
+py-roller cache-model --language zh
+py-roller cache-model --language zh --transcriber-model-name large-v3
+py-roller cache-model --language zh --transcriber-hf-xet off --transcriber-hf-proxy socks5://127.0.0.1:7890
 ```
 
 ## Writer behavior
@@ -487,6 +519,7 @@ shared:
   transcriber_device: cpu
   transcriber_model_path: ~/.cache/py-roller/models/transcriber
   transcriber_local_files_only: false
+  transcriber_vad_filter: true
   transcriber_hf_xet: auto
   transcriber_hf_proxy: null
   transcriber_hf_download_timeout: 120

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.7] - 2026-05-15
+
+### Added
+- Added `--transcriber-vad-filter` / `--no-transcriber-vad-filter` (default: enabled) to skip silence during faster-whisper transcription, reducing transcription time by 20–40% for typical songs.
+- Added `py-roller cache-model` command to pre-download transcriber models into the local model store before running pipelines.
+- Added automatic GPU detection: when no `--transcriber-device` is specified and CUDA is available, the transcriber automatically uses `cuda` with `float16` compute type.
+
+### Changed
+- faster-whisper `vad_filter` now defaults to `True` (was hardcoded to `False`).
+
 ## [0.5.6] - 2026-05-13
 
 ### Added

@@ -33,6 +33,7 @@ _FASTER_WHISPER_CONFIG_KEYS = frozenset({
     "device",
     "compute_type",
     "batch_size",
+    "vad_filter",
 }) | _HF_DOWNLOAD_CONFIG_KEYS
 
 _WAV2VEC2_CONFIG_KEYS = frozenset({

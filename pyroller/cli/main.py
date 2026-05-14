@@ -93,6 +93,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     transcriber.add_argument("--transcriber-local-files-only", action="store_true", default=None, help="Offline mode: do not access remote model sources; use only local files/cache.")
     transcriber.add_argument("--transcriber-compute-type", default=None, help="faster-whisper compute_type override, e.g. float16, int8, or int8_float16.")
     transcriber.add_argument("--transcriber-batch-size", type=int, default=None, help="faster-whisper inference batch size override.")
+    transcriber.add_argument("--transcriber-vad-filter", action=argparse.BooleanOptionalAction, default=None, help="Enable faster-whisper VAD filtering to skip silence. Default: true")
 
     hf_download = parser.add_argument_group("Hugging Face model download options")
     hf_download.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="XET/CAS download mode for Hugging Face models. Use off when XET hangs or fails on your network. Default: auto")
@@ -189,6 +190,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
             "Common commands:\n"
             "  py-roller install\n"
             "  py-roller doctor\n"
+            "  py-roller cache-model --language zh\n"
             "  py-roller run --help\n"
             "  py-roller batch --help"
         ),
@@ -248,6 +250,24 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
         default="human",
         help="Doctor report output format. human prints the terminal checklist; json prints a machine-readable report. Default: human",
     )
+
+    cache_model = subparsers.add_parser(
+        "cache-model",
+        help="Pre-download a transcriber model into the local model store.",
+        description="Resolve and materialize a transcriber model into the local py-roller model store so later pipeline runs can use --transcriber-local-files-only.",
+        formatter_class=formatter,
+    )
+    cache_model.add_argument("--language", choices=["zh", "en", "mul"], default="mul", help="Pipeline language for backend/model resolution. Default: mul")
+    cache_model.add_argument("--transcriber-backend", default=None, help="Transcriber backend override. Defaults are language-aware.")
+    cache_model.add_argument("--transcriber-model-name", default=None, help="Model alias, Hugging Face repo id, or explicit local model path. faster-whisper aliases include large-v2, large-v3, and turbo.")
+    cache_model.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="Local transcriber model store root.")
+    cache_model.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="XET/CAS download mode. Use off when XET hangs. Default: auto")
+    cache_model.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads.")
+    cache_model.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face metadata/etag timeout in seconds.")
+    cache_model.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face file download timeout in seconds.")
+    cache_model.add_argument("--transcriber-hf-max-workers", type=int, default=None, help="Maximum parallel snapshot download workers.")
+    cache_model.add_argument("--progress-format", choices=["human", "jsonl", "both"], default="human", help="Progress output format. Default: human")
+
     return parser, run, batch
 
 def _split_stages(value: str) -> list[str]:
@@ -266,6 +286,20 @@ def _split_csv(value: object) -> list[str]:
                 out.append(piece)
         return out
     return [str(value).strip()] if str(value).strip() else []
+
+def _auto_detect_transcriber_device() -> tuple[str | None, str | None]:
+    """Return (device, compute_type) if a CUDA GPU is available, otherwise (None, None)."""
+    try:
+        import torch
+    except ImportError:
+        return None, None
+    try:
+        if torch.cuda.is_available():
+            return "cuda", "float16"
+    except Exception:
+        pass
+    return None, None
+
 
 def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     splitter_cfg: dict[str, object] = {"two_stems": "vocals"}
@@ -311,6 +345,15 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
         transcriber_cfg["compute_type"] = args.transcriber_compute_type
     if args.transcriber_batch_size is not None:
         transcriber_cfg["batch_size"] = args.transcriber_batch_size
+    if args.transcriber_vad_filter is not None:
+        transcriber_cfg["vad_filter"] = args.transcriber_vad_filter
+
+    if transcriber_cfg.get("device") is None:
+        auto_device, auto_compute = _auto_detect_transcriber_device()
+        if auto_device is not None:
+            transcriber_cfg["device"] = auto_device
+            if transcriber_cfg.get("compute_type") is None:
+                transcriber_cfg["compute_type"] = auto_compute
 
     aligner_cfg: dict[str, object] = {}
     if args.aligner_backend is not None:
@@ -514,6 +557,44 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
     _print_batch_summary(summary)
     return 1 if summary.failed else 0
 
+def _execute_cache_model(args: argparse.Namespace) -> int:
+    from pyroller.logging_utils import configure_logging
+    from pyroller.progress import build_cli_progress_reporter
+    from pyroller.transcriber.hf_download_config import HFDownloadConfig
+    from pyroller.transcriber.model_resolver import TranscriberModelResolver
+    from pyroller.transcriber.registry import resolve_transcriber_backend
+
+    configure_logging(level="INFO", log_file=None)
+    progress = build_cli_progress_reporter(args.progress_format)
+    language, backend = resolve_transcriber_backend(args.language, args.transcriber_backend)
+    hf_config = HFDownloadConfig(
+        xet=args.transcriber_hf_xet or "auto",
+        proxy=args.transcriber_hf_proxy,
+        etag_timeout=args.transcriber_hf_etag_timeout,
+        download_timeout=args.transcriber_hf_download_timeout,
+        max_workers=args.transcriber_hf_max_workers,
+    )
+    resolver = TranscriberModelResolver(
+        backend=backend,
+        language=language,
+        model_name=args.transcriber_model_name,
+        model_path=args.transcriber_model_path,
+        local_files_only=False,
+        hf_download_config=hf_config,
+    )
+    stage = progress.stage("model_download", total=2, unit="phase")
+    stage.phase("resolving model")
+    plan = resolver.resolve(materialize=True, stage=stage)
+    stage.phase("model cached")
+    stage.close("model download complete")
+    print(f"[OK] model cached: {plan.effective_model_name}")
+    print(f"  backend      : {plan.backend}")
+    print(f"  language     : {plan.language}")
+    print(f"  model dir    : {plan.resolved_model_dir}")
+    print(f"  store root   : {plan.model_store_root}")
+    return 0
+
+
 def main() -> None:
     try:
         raw_argv = sys.argv[1:]
@@ -529,6 +610,8 @@ def main() -> None:
         if args.command == "install":
             from pyroller.cli.install import run_install_command
             raise SystemExit(run_install_command(args))
+        if args.command == "cache-model":
+            raise SystemExit(_execute_cache_model(args))
 
         request = _build_request(args)
         if args.command == "run":

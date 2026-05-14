@@ -37,6 +37,7 @@ class FasterWhisperEngine(TranscriberEngine):
         device: str = "cpu",
         compute_type: str = "int8",
         batch_size: int = 8,
+        vad_filter: bool = True,
         hf_xet: str = "auto",
         hf_proxy: str | None = None,
         hf_etag_timeout: float | None = None,
@@ -49,6 +50,7 @@ class FasterWhisperEngine(TranscriberEngine):
         self.device = device
         self.compute_type = compute_type
         self.batch_size = max(int(batch_size), 1)
+        self.vad_filter = bool(vad_filter)
         self.hf_download_config = HFDownloadConfig(
             xet=hf_xet,
             proxy=hf_proxy,
@@ -226,7 +228,7 @@ class FasterWhisperEngine(TranscriberEngine):
         else:
             segments_iter, info = bundle.model.transcribe(
                 str(audio_path),
-                vad_filter=False,
+                vad_filter=self.vad_filter,
                 **transcribe_kwargs,
             )
 

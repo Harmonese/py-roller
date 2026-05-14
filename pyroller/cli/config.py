@@ -32,6 +32,7 @@ _SHARED_ALLOWED_KEYS = {
     "transcriber_hf_max_workers",
     "transcriber_compute_type",
     "transcriber_batch_size",
+    "transcriber_vad_filter",
     "splitter_demucs_model",
     "aligner_min_gap",
     "aligner_repetition",
