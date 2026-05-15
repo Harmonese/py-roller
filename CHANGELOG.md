@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.8] - 2026-05-15
+
+### Fixed
+- Fixed an issue with VAD-Filter
+
 ## [0.5.7] - 2026-05-15
 
 ### Added

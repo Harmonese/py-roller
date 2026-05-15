@@ -219,7 +219,10 @@ class FasterWhisperEngine(TranscriberEngine):
         }
         if language != "mul":
             transcribe_kwargs["language"] = language
-        if bundle.batched_pipeline is not None:
+        use_batched = bundle.batched_pipeline is not None and self.vad_filter
+        if not self.vad_filter and bundle.batched_pipeline is not None:
+            logger.info("VAD is disabled; falling back to non-batched transcription")
+        if use_batched:
             segments_iter, info = bundle.batched_pipeline.transcribe(
                 str(audio_path),
                 batch_size=self.batch_size,
