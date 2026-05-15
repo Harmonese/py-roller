@@ -90,7 +90,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     transcriber.add_argument("--transcriber-device", default=None, help="Inference device passed to supported transcriber backends, e.g. cpu or cuda.")
     transcriber.add_argument("--transcriber-model-name", default=None, help="Model alias, Hugging Face repo id, or explicit local model path. faster-whisper aliases include large-v2, large-v3, and turbo.")
     transcriber.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="Local transcriber model store. Missing remote models are materialized here unless --transcriber-local-files-only is set.")
-    transcriber.add_argument("--transcriber-local-files-only", action="store_true", default=None, help="Offline mode: do not access remote model sources; use only local files/cache.")
+    transcriber.add_argument("--transcriber-local-files-only", action=argparse.BooleanOptionalAction, default=None, help="Offline mode: do not access remote model sources; use only local files/cache.")
     transcriber.add_argument("--transcriber-compute-type", default=None, help="faster-whisper compute_type override, e.g. float16, int8, or int8_float16.")
     transcriber.add_argument("--transcriber-batch-size", type=int, default=None, help="faster-whisper inference batch size override.")
     transcriber.add_argument("--transcriber-vad-filter", action=argparse.BooleanOptionalAction, default=None, help="Enable faster-whisper VAD filtering to skip silence. Default: true")
@@ -535,8 +535,11 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
     else:
         _validate_batch_directory_outputs(request)
         runner = ComposablePipelineRunner()
-        stages = runner._resolve_execution_plan(request)
-        runner._validate_request(request, stages)
+        try:
+            stages = runner._resolve_execution_plan(request)
+            runner._validate_request(request, stages)
+        finally:
+            runner.close()
         tasks = BatchBuilder(
             pair_by=args.pair_by,
             audio_glob=args.audio_glob,

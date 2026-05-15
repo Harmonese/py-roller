@@ -94,8 +94,15 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             )
 
         lyric_units, line_ranges = self._flatten_lyric_units(parsed_lyrics)
-        phase_budget = 4
-        stage_progress = progress.stage("aligner", total=phase_budget + max(len(lyric_units), 1), unit="step")
+        if self.repetition == "full":
+            # No DP row-by-row updates; only phase-level progress.
+            stage_progress = progress.stage("aligner", total=4, unit="phase")
+        elif self.repetition == "few":
+            # DP rows + 5 phases (inputs, recovery, repair, monotonic, finalize).
+            stage_progress = progress.stage("aligner", total=5 + max(len(lyric_units), 1), unit="step")
+        else:
+            # DP rows + 4 phases (inputs, recovery, monotonic, finalize).
+            stage_progress = progress.stage("aligner", total=4 + max(len(lyric_units), 1), unit="step")
         stage_progress.phase("building alignment inputs")
         logger.info("Flattened lyric units=%d across %d lines", len(lyric_units), len(lyric_lines))
         if not lyric_units:

@@ -67,5 +67,9 @@ def get_lyrics_parser(language: str, config: dict[str, Any] | None = None) -> Ly
     init_config.pop("backend", None)
     signature = inspect.signature(factory.__init__)
     accepted = {name for name in signature.parameters if name != "self"}
-    filtered_config = {key: value for key, value in init_config.items() if key in accepted}
+    accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values())
+    if accepts_kwargs:
+        filtered_config = dict(init_config)
+    else:
+        filtered_config = {key: value for key, value in init_config.items() if key in accepted}
     return factory(**filtered_config)

@@ -396,9 +396,15 @@ class SequenceAlignmentSupport:
                 candidate_end = max(candidate_end, next_start)
             line.end_time = candidate_end
             if line.aligned_units:
-                if line.aligned_units[-1].end_time < candidate_end:
-                    last = line.aligned_units[-1]
-                    last.end_time = candidate_end
+                first_start = line.aligned_units[0].start_time
+                natural_end = line.aligned_units[-1].end_time
+                if natural_end < candidate_end and natural_end > first_start:
+                    # Proportionally scale all unit timestamps so the gap is
+                    # distributed across syllables instead of piling onto the last one.
+                    scale = (candidate_end - first_start) / (natural_end - first_start)
+                    for unit in line.aligned_units:
+                        unit.start_time = first_start + (unit.start_time - first_start) * scale
+                        unit.end_time = first_start + (unit.end_time - first_start) * scale
                 prev_end = line.start_time
                 for unit in line.aligned_units:
                     if unit.start_time < prev_end:

@@ -7,8 +7,11 @@ def _safe_seconds(seconds: float) -> float:
 
 def format_lrc_timestamp(seconds: float, decimals: int = 3) -> str:
     safe_seconds = _safe_seconds(seconds)
-    minutes = int(safe_seconds // 60)
-    secs = safe_seconds - (minutes * 60)
+    multiplier = 10 ** decimals
+    total_ticks = int(round(safe_seconds * multiplier))
+    minutes = total_ticks // (60 * multiplier)
+    remaining_ticks = total_ticks % (60 * multiplier)
+    secs = remaining_ticks / multiplier
     width = 2 + 1 + decimals
     return f"[{minutes:02d}:{secs:0{width}.{decimals}f}]"
 

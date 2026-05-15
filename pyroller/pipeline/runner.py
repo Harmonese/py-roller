@@ -490,6 +490,7 @@ class ComposablePipelineRunner:
                 "hf_max_workers": "--transcriber-hf-max-workers",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
+                "vad_filter": "--transcriber-vad-filter",
             }
             accepted_transcriber_keys = get_transcriber_config_keys(chosen_transcriber_backend)
             incompatible = [

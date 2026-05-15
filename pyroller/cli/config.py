@@ -41,7 +41,7 @@ _SHARED_ALLOWED_KEYS = {
     "cleanup",
     "progress_format",
 }
-_RUN_ALLOWED_KEYS: set[str] = set()
+_RUN_ALLOWED_KEYS: set[str] = set()  # currently no extra keys beyond shared; if any are added, add them here
 _BATCH_ALLOWED_KEYS = {
     "continue_on_error",
     "skip_existing",
@@ -112,6 +112,10 @@ def _normalize_sections(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if not isinstance(raw, dict):
                 raise ConfigError(f"Config section '{section}' must be a mapping/object.")
             sections[section] = dict(raw)
+        if sections["run"]:
+            # The "run" section has no keys beyond shared; merge it into shared
+            # so users aren't confused by rejected keys.
+            sections["shared"].update(sections.pop("run"))
         if other_keys:
             raise ConfigError(
                 "Top-level config keys must be under 'shared', 'run', or 'batch' when sectioned config is used. "
@@ -131,11 +135,12 @@ def _validate_section_keys(sections: dict[str, dict[str, Any]]) -> None:
             + ". Only default option overrides are allowed."
         )
     run_unknown = sorted(set(sections.get("run", {})) - _RUN_ALLOWED_KEYS)
+    run_unknown = sorted(set(sections.get("run", {})) - _RUN_ALLOWED_KEYS - _SHARED_ALLOWED_KEYS)
     if run_unknown:
         raise ConfigError(
             "Unsupported config keys under 'run': "
             + ", ".join(run_unknown)
-            + ". Run-specific config currently supports no extra keys beyond 'shared'."
+            + ". Run-specific config supports all shared keys."
         )
     batch_unknown = sorted(set(sections.get("batch", {})) - _BATCH_ALLOWED_KEYS)
     if batch_unknown:

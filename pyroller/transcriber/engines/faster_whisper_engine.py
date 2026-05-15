@@ -219,9 +219,11 @@ class FasterWhisperEngine(TranscriberEngine):
         }
         if language != "mul":
             transcribe_kwargs["language"] = language
+        # BatchedInferencePipeline requires VAD (internally handles clip timestamps).
+        # When vad_filter is disabled, we must use the non-batched path.
         use_batched = bundle.batched_pipeline is not None and self.vad_filter
         if not self.vad_filter and bundle.batched_pipeline is not None:
-            logger.info("VAD is disabled; falling back to non-batched transcription")
+            logger.info("VAD is disabled; BatchedInferencePipeline requires VAD — falling back to non-batched transcription")
         if use_batched:
             segments_iter, info = bundle.batched_pipeline.transcribe(
                 str(audio_path),
@@ -311,7 +313,7 @@ class FasterWhisperEngine(TranscriberEngine):
             "compute_type": self.compute_type,
             "batch_size": self.batch_size,
             "native_word_timestamps": True,
-            "batched_inference": bundle.batched_pipeline is not None,
+            "batched_inference": use_batched,
             "audio_duration": audio_duration,
             "detected_language": self._field(info, "language"),
             "detected_language_probability": self._float_or_none(self._field(info, "language_probability")),

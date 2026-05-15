@@ -237,18 +237,19 @@ class ManifestBatchBuilder:
 
     def build_tasks(self, request: PipelineRequest) -> list[BatchTask]:
         runner = ComposablePipelineRunner()
-        stages = runner._resolve_execution_plan(request)
-        if not stages:
-            raise ValueError("At least one stage is required for batch mode.")
-        entries = self._load_entries()
-        tasks: list[BatchTask] = []
-        seen_stems: set[str] = set()
-        output_owner: dict[Path, str] = {}
-        for index, entry in enumerate(entries, start=1):
-            if not isinstance(entry, dict):
-                raise ValueError(f"Manifest task #{index} must be a mapping/object.")
-            task = self._task_from_entry(index, entry, request)
-            runner._validate_request(task.request, stages)
+        try:
+            stages = runner._resolve_execution_plan(request)
+            if not stages:
+                raise ValueError("At least one stage is required for batch mode.")
+            entries = self._load_entries()
+            tasks: list[BatchTask] = []
+            seen_stems: set[str] = set()
+            output_owner: dict[Path, str] = {}
+            for index, entry in enumerate(entries, start=1):
+                if not isinstance(entry, dict):
+                    raise ValueError(f"Manifest task #{index} must be a mapping/object.")
+                task = self._task_from_entry(index, entry, request)
+                runner._validate_request(task.request, stages)
             if task.stem in seen_stems:
                 raise ValueError(f"Manifest task ids/stems must be unique. Duplicate: {task.stem}")
             seen_stems.add(task.stem)
@@ -262,6 +263,8 @@ class ManifestBatchBuilder:
                     )
                 output_owner[resolved] = task.stem
             tasks.append(task)
+        finally:
+            runner.close()
         if not tasks:
             raise ValueError(f"Manifest {self.manifest_path} did not define any tasks.")
         return tasks

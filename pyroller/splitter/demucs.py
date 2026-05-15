@@ -82,9 +82,22 @@ class DemucsSplitter(Splitter):
 
         run_subprocess(cmd, output_callback=_handle_demucs_output if stage is not None else None)
 
-        stem_path = self.output_dir / self.model / audio_path.stem / f"{self.two_stems}.wav"
+        expected_dir = self.output_dir / self.model
+        stem_path = expected_dir / audio_path.stem / f"{self.two_stems}.wav"
         if not stem_path.exists():
-            raise FileNotFoundError(f"Demucs output not found: {stem_path}")
+            # Demucs version or path canonicalization differences may produce a
+            # different directory layout.  Search for any WAV file matching the
+            # expected stem name as a graceful fallback.
+            candidates = list(expected_dir.glob(f"**/{audio_path.stem}/**/{self.two_stems}.wav"))
+            if not candidates:
+                candidates = list(expected_dir.glob(f"**/{self.two_stems}.wav"))
+            if not candidates:
+                raise FileNotFoundError(
+                    f"Demucs output not found at expected path {stem_path}, "
+                    f"and no fallback match found under {expected_dir}"
+                )
+            stem_path = candidates[0]
+            logger.info("Demucs output resolved via fallback glob: %s", stem_path)
         if stage is not None:
             stage.phase("collecting vocal stem")
             stage.close("splitter output ready")

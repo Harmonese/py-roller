@@ -4,10 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.9] - 2026-05-16
+
+### Fixed
+- Fixed `use_batched` incorrectly coupling VAD setting with batching availability, and metadata `batched_inference` now reflects the actual inference path taken.
+- Fixed LRC timestamp formatting where `59.999999` seconds could round to invalid `[00:60.00]` by switching to integer-tick arithmetic.
+- Fixed `run:` YAML config section silently rejecting all keys; keys under `run:` are now merged into `shared:`.
+- Fixed `lrc_compressed` writer silently ignoring `writer_spacing=keep`; the combination now raises a clear error.
+- Fixed ASS karaoke writer missing `by_tag` in output header and not escaping ASS control characters (`{`, `}`, `\`) in lyric text.
+- Fixed `--transcriber-local-files-only` using `store_true` instead of `BooleanOptionalAction`, preventing CLI negation when a config file enabled it.
+- Fixed progress phase counting for `--aligner-repetition full` where the total was over-counted by `len(lyric_units)`.
+- Fixed Demucs output path fragility: added glob-based fallback when the expected output path does not match.
+- Fixed parser and aligner registries silently discarding all backend configuration when constructors accept `**kwargs`.
+- Fixed `ComposablePipelineRunner` lifecycle in batch validation: `runner.close()` is now always called via `try/finally`.
+- Fixed gap-filling in alignment line end times: the gap to the next line is now proportionally redistributed across all syllables instead of stretching only the last one.
+- Fixed `--transcriber-vad-filter` bypassing backend compatibility validation.
+
+### Changed
+- `__version__` in `pyroller/__init__.py` now reads from package metadata (`importlib.metadata.version`), leaving `pyproject.toml` as the single source of truth.
+
 ## [0.5.8] - 2026-05-15
 
 ### Fixed
-- Fixed an issue with VAD-Filter.
+- Fixed `BatchedInferencePipeline` crash when `vad_filter` is disabled; the engine now falls back to non-batched transcription.
 
 ## [0.5.7] - 2026-05-15
 

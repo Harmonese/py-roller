@@ -28,6 +28,11 @@ def build_writer(backend_name: str | None, config: dict[str, Any] | None = None)
     if backend == "lrc_cs":
         return LRCWriter(decimals=2, compressed=False, by_tag=by_tag, keep_spacing=keep_spacing)
     if backend == "lrc_compressed":
+        if keep_spacing:
+            raise ValueError(
+                "writer_backend=lrc_compressed does not support writer_spacing=keep. "
+                "Compressed LRC merges repeated lines and cannot preserve blank/spacing lines."
+            )
         return LRCWriter(decimals=2, compressed=True, by_tag=by_tag, keep_spacing=False)
     if backend == "ass_karaoke":
         return ASSKaraokeWriter(
