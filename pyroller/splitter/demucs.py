@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 import re
 import sys
 from pathlib import Path
@@ -37,7 +39,7 @@ class DemucsSplitter(Splitter):
     def split(self, audio_path: Path, progress: ProgressReporter | None = None) -> AudioArtifact:
         stage = progress.stage("splitter", total=2, unit="phase") if progress is not None else None
         if stage is not None:
-            stage.phase("starting Demucs (native progress below)")
+            stage.phase(_("starting Demucs (native progress below)"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         cmd = [
             sys.executable,
@@ -61,7 +63,7 @@ class DemucsSplitter(Splitter):
             str(self.output_dir),
             str(audio_path),
         ])
-        logger.info("Running Demucs: %s", " ".join(cmd))
+        logger.info(_("Running Demucs: %s"), " ".join(cmd))
 
         def _handle_demucs_output(record: str, _separator: str) -> None:
             match = _DEMUCS_TQDM_RE.search(record)
@@ -77,7 +79,7 @@ class DemucsSplitter(Splitter):
                 total=total,
                 unit="seconds",
                 progress=progress_value,
-                message=f"Separating vocals: {current:.1f} / {total:.1f} seconds",
+                message=_("Separating vocals: {:.1f} / {:.1f} seconds").format(current, total),
             )
 
         run_subprocess(cmd, output_callback=_handle_demucs_output if stage is not None else None)
@@ -93,14 +95,13 @@ class DemucsSplitter(Splitter):
                 candidates = list(expected_dir.glob(f"**/{self.two_stems}.wav"))
             if not candidates:
                 raise FileNotFoundError(
-                    f"Demucs output not found at expected path {stem_path}, "
-                    f"and no fallback match found under {expected_dir}"
+                    _("Demucs output not found at expected path {}, and no fallback match found under {}").format(stem_path, expected_dir)
                 )
             stem_path = candidates[0]
-            logger.info("Demucs output resolved via fallback glob: %s", stem_path)
+            logger.info(_("Demucs output resolved via fallback glob: %s"), stem_path)
         if stage is not None:
-            stage.phase("collecting vocal stem")
-            stage.close("splitter output ready")
+            stage.phase(_("collecting vocal stem"))
+            stage.close(_("splitter output ready"))
 
         return AudioArtifact(
             artifact_id=make_id("artifact"),

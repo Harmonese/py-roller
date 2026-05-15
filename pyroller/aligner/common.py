@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 import math
 from collections import Counter
 from difflib import SequenceMatcher
@@ -468,13 +470,13 @@ class SequenceAlignmentSupport:
         logger.info("%s", "=" * 58)
 
     def _log_alignment_report(self, strategy: str, result_report: dict[str, Any], lines: list[AlignmentLine]) -> None:
-        logger.info("Alignment strategy: %s", strategy)
+        logger.info(_("Alignment strategy: %s"), strategy)
         logger.info(
-            "Alignment methods: %s",
+            _("Alignment methods: %s"),
             ", ".join(f"{method}={count}" for method, count in sorted(result_report.get("method_counts", {}).items())),
         )
         logger.info(
-            "Average confidence=%.3f | candidates=%d | repairs=%d",
+            _("Average confidence=%.3f | candidates=%d | repairs=%d"),
             float(result_report.get("average_confidence", 0.0)),
             int(result_report.get("candidate_count", 0)),
             len(result_report.get("repairs", [])),
@@ -482,14 +484,14 @@ class SequenceAlignmentSupport:
         if result_report.get("confidence_buckets"):
             buckets = result_report["confidence_buckets"]
             logger.info(
-                "Confidence buckets (matched only): high=%d medium=%d low=%d",
+                _("Confidence buckets (matched only): high=%d medium=%d low=%d"),
                 int(buckets.get("high", 0)),
                 int(buckets.get("medium", 0)),
                 int(buckets.get("low", 0)),
             )
         for line in lines:
             logger.debug(
-                "L%02d @ %.3fs→%.3fs conf=%.3f [%s] range=%s units=%d text=%r",
+                _("L%02d @ %.3fs→%.3fs conf=%.3f [%s] range=%s units=%d text=%r"),
                 line.line_index + 1,
                 line.assigned_time,
                 line.end_time if line.end_time is not None else line.assigned_time,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+from pyroller.i18n import _
+
 from pyroller.domain import LyricLine, LyricUnit, LyricsDocument, ParsedLyrics
 from pyroller.parser.base import LyricsParser
 from pyroller.utils.ids import make_id
@@ -46,7 +48,7 @@ class ChinesePinyinParser(LyricsParser):
                 )
             )
 
-        logger.info("Parsed %d lyric lines into normalized pinyin syllables", len(parsed_lines))
+        logger.info(_("Parsed %d lyric lines into normalized pinyin syllables"), len(parsed_lines))
         return ParsedLyrics(
             language=language,
             backend="zh_pinyin",

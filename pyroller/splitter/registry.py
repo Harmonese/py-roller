@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from typing import Any
 
 from pyroller.splitter.base import Splitter
@@ -32,8 +34,7 @@ def resolve_splitter_backend(backend_name: str | None) -> str:
     chosen_backend = backend_name or _DEFAULT_SPLITTER_BACKEND
     if chosen_backend not in _AVAILABLE_SPLITTER_BACKENDS:
         raise ValueError(
-            f"Unsupported splitter backend {chosen_backend!r}. "
-            f"Available backends: {', '.join(_AVAILABLE_SPLITTER_BACKENDS)}"
+            _("Unsupported splitter backend {!r}. Available backends: {}").format(chosen_backend, ", ".join(_AVAILABLE_SPLITTER_BACKENDS))
         )
     return chosen_backend
 
@@ -50,7 +51,7 @@ def sanitize_splitter_config(backend_name: str, config: dict[str, Any] | None) -
     ignored = sorted(set(init_config) - accepted)
     if ignored:
         logger.info(
-            "Ignoring backend-incompatible splitter option(s) for %s: %s",
+            _("Ignoring backend-incompatible splitter option(s) for %s: %s"),
             backend_name,
             ", ".join(ignored),
         )

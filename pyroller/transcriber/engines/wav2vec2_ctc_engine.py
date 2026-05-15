@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import gc
+
+from pyroller.i18n import _
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,7 +103,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
     def _prepare_bundle(self, language: str, stage=None) -> _PreparedWav2Vec2Bundle:
         if self._is_prepared_for(language):
             if stage is not None:
-                stage.phase("reusing prepared wav2vec2 model")
+                stage.phase(_("reusing prepared wav2vec2 model"))
             return self._prepared  # type: ignore[return-value]
 
         with hf_download_environment(self.hf_download_config, local_files_only=self.local_files_only):
@@ -109,21 +111,21 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
                 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore
             except ImportError as exc:  # pragma: no cover
                 raise RuntimeError(
-                    f"{self.backend_name} dependencies are not installed. Install with: pip install librosa transformers torch"
+                    _("{} dependencies are not installed. Install with: pip install librosa transformers torch").format(self.backend_name)
                 ) from exc
 
             self.close()
             if stage is not None:
-                stage.phase("resolving transcriber model")
+                stage.phase(_("resolving transcriber model"))
             plan = self._build_resolution_plan(language, materialize=True, stage=stage)
             if plan.resolved_model_dir is None:
-                raise RuntimeError(f"Unable to resolve local {self.backend_name} model directory.")
+                raise RuntimeError(_("Unable to resolve local {} model directory.").format(self.backend_name))
             processor = None
             model = None
             try:
-                logger.info("Preparing %s model=%s from=%s device=%s", self.backend_name, self.model_name, plan.resolved_model_dir, self.device)
+                logger.info(_("Preparing %s model=%s from=%s device=%s"), self.backend_name, self.model_name, plan.resolved_model_dir, self.device)
                 if stage is not None:
-                    stage.phase("loading wav2vec2 model")
+                    stage.phase(_("loading wav2vec2 model"))
                 processor = Wav2Vec2Processor.from_pretrained(
                     str(plan.resolved_model_dir),
                     local_files_only=True,
@@ -156,15 +158,15 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         bundle = self._prepared
         self._prepared = None
         if bundle is None:
-            logger.debug("%s close() called with no prepared bundle to release", self.__class__.__name__)
+            logger.debug(_("%s close() called with no prepared bundle to release"), self.__class__.__name__)
             return
-        logger.info("Closing prepared %s model=%s language=%s device=%s", self.backend_name, self.model_name, bundle.language, self.device)
+        logger.info(_("Closing prepared %s model=%s language=%s device=%s"), self.backend_name, self.model_name, bundle.language, self.device)
         try:
             bundle.model = None
             bundle.processor = None
         finally:
             self._clear_device_cache()
-            logger.info("Closed prepared %s model=%s language=%s device=%s", self.backend_name, self.model_name, bundle.language, self.device)
+            logger.info(_("Closed prepared %s model=%s language=%s device=%s"), self.backend_name, self.model_name, bundle.language, self.device)
 
     def prepare(self, language: str, stage=None) -> dict[str, object]:
         bundle = self._prepare_bundle(language, stage=stage)
@@ -172,29 +174,29 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
 
     def transcribe(self, audio_artifact: AudioArtifact, language: str, stage=None) -> EngineOutput:
         if stage is not None:
-            stage.phase("loading wav2vec2 backend")
+            stage.phase(_("loading wav2vec2 backend"))
         try:
             import librosa  # type: ignore
             import torch  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                f"{self.backend_name} dependencies are not installed. Install with: pip install librosa transformers torch"
+                _("{} dependencies are not installed. Install with: pip install librosa transformers torch").format(self.backend_name)
             ) from exc
 
         audio_path = Path(audio_artifact.path) if audio_artifact.path is not None else None
         if audio_path is None or not audio_path.exists():
-            raise FileNotFoundError(f"Audio file not found for {self.backend_name} backend: {audio_artifact.path}")
+            raise FileNotFoundError(_("Audio file not found for {} backend: {}").format(self.backend_name, audio_artifact.path))
 
         bundle = self._prepare_bundle(language, stage=stage)
-        logger.info("Using prepared %s model=%s from=%s device=%s", self.backend_name, self.model_name, bundle.plan.resolved_model_dir, self.device)
+        logger.info(_("Using prepared %s model=%s from=%s device=%s"), self.backend_name, self.model_name, bundle.plan.resolved_model_dir, self.device)
 
         if stage is not None:
-            stage.phase("loading audio")
+            stage.phase(_("loading audio"))
         speech, sampling_rate = librosa.load(str(audio_path), sr=self.target_sample_rate, mono=True)
         audio_duration = float(len(speech) / sampling_rate) if len(speech) else 0.0
 
         if stage is not None:
-            stage.phase("running phonetic inference")
+            stage.phase(_("running phonetic inference"))
         inputs = bundle.processor(speech, sampling_rate=sampling_rate, return_tensors="pt", padding=True)
         input_values = inputs.input_values.to(self.device)
         attention_mask = inputs.attention_mask.to(self.device) if "attention_mask" in inputs else None
@@ -212,7 +214,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
         if blank_id is None:
             blank_id = bundle.model.config.pad_token_id
         if blank_id is None:
-            raise RuntimeError(f"Unable to determine CTC blank token id for {self.backend_name} backend")
+            raise RuntimeError(_("Unable to determine CTC blank token id for {} backend").format(self.backend_name))
 
         token_segments = ctc_token_segments(predicted_ids, bundle.processor.tokenizer, blank_id=blank_id, time_offset=time_offset)
         spans = self._token_segments_to_spans(token_segments)

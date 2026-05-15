@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-roller"
-version = "0.5.9"
+version = "0.5.10"
 description = "Composable lyric-audio alignment pipeline with staged execution, batch processing, and LRC/ASS export."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,7 @@ keywords = [
   "cli",
   "batch",
   "transcription",
+  "music",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -74,4 +75,4 @@ include-package-data = true
 include = ["pyroller*"]
 
 [tool.setuptools.package-data]
-pyroller = ["resources/constraints/*.txt", "resources/requirements/*.txt"]
+pyroller = ["resources/constraints/*.txt", "resources/requirements/*.txt", "resources/locales/*.json"]

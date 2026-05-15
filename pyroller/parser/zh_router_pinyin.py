@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from collections import Counter
 from typing import Any
 
@@ -24,8 +26,8 @@ class ZhRouterPinyinParser(LyricsParser):
         total_foreign_segments = 0
 
         logger.info("=" * 58)
-        logger.info("ZH ROUTER PINYIN PARSER")
-        logger.info("Strategy: han->pinyin, digit->digit_by_digit, latin->borrowed pinyin proxy")
+        logger.info(_("ZH ROUTER PINYIN PARSER"))
+        logger.info(_("Strategy: han->pinyin, digit->digit_by_digit, latin->borrowed pinyin proxy"))
         logger.info("=" * 58)
 
         for line in lyrics_document.lines:
@@ -83,7 +85,7 @@ class ZhRouterPinyinParser(LyricsParser):
                 )
             )
             logger.debug(
-                "L%-3d routes=%s segment_types=%s segments=%s",
+                _("L%-3d routes=%s segment_types=%s segments=%s"),
                 line.line_index + 1,
                 route_summary.get("route_counts"),
                 route_summary.get("segment_type_counts"),
@@ -91,7 +93,7 @@ class ZhRouterPinyinParser(LyricsParser):
             )
 
         logger.info(
-            "Parsed %d lyric lines with zh router (segments=%d routes=%s segment_types=%s foreign_segments=%d)",
+            _("Parsed %d lyric lines with zh router (segments=%d routes=%s segment_types=%s foreign_segments=%d)"),
             len(parsed_lines),
             total_segments,
             dict(total_routes),

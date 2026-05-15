@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from pyroller.i18n import _
 from pyroller.utils.json import json_default
 
 MIN_TORCH = (2, 6, 0)
@@ -105,7 +106,7 @@ def _check_python() -> CheckResult:
     return CheckResult(
         name="python",
         status="ok",
-        message=f"Python {platform.python_version()} on {platform.system()} {platform.machine()}",
+        message=_("Python {py_ver} on {sys_name} {machine}").format(py_ver=platform.python_version(), sys_name=platform.system(), machine=platform.machine()),
         version=platform.python_version(),
         details={"system": platform.system(), "machine": platform.machine()},
     )
@@ -122,13 +123,13 @@ def _check_torch() -> CheckResult:
     except Exception:
         cuda_available = False
     torch_version = str(getattr(torch, "__version__", "unknown"))
-    flavor = f"cuda={cuda_version}" if cuda_version else "cpu"
+    flavor = _("cuda={}").format(cuda_version) if cuda_version else _("cpu")
     status = "ok"
-    message = f"torch {torch_version} ({flavor}, cuda_available={cuda_available})"
+    message = _("torch {ver} ({flavor}, cuda_available={ca})").format(ver=torch_version, flavor=flavor, ca=cuda_available)
     parsed = _parse_version_tuple(torch_version)
     if parsed is None or parsed < MIN_TORCH:
         status = "fail"
-        message += " | too old for the current transcriber stack; reinstall with: py-roller install"
+        message += _(" | too old for the current transcriber stack; reinstall with: py-roller install")
     return CheckResult(
         "torch",
         status,
@@ -141,12 +142,12 @@ def _check_torch() -> CheckResult:
 def _check_torchaudio() -> CheckResult:
     try:
         torchaudio = importlib.import_module("torchaudio")
-        version = str(getattr(torchaudio, "__version__", _dist_version("torchaudio") or "unknown"))
-        return CheckResult("torchaudio", "ok", f"torchaudio {version}", version=version)
+        version = str(getattr(torchaudio, "__version__", _dist_version("torchaudio") or _("unknown")))
+        return CheckResult("torchaudio", "ok", _("torchaudio {}").format(version), version=version)
     except Exception as exc:
         message = _format_exception(exc)
         if _contains_any(message, ("libcudart", "cudnn", "nvcuda", "libtorch_cuda", "fbgemm.dll", "libtorchaudio")):
-            message += " | Detected a GPU-flavored or ABI-mismatched Torch/Torchaudio build. Reinstall with: py-roller install"
+            message += _(" | Detected a GPU-flavored or ABI-mismatched Torch/Torchaudio build. Reinstall with: py-roller install")
         return CheckResult("torchaudio", "fail", message)
 
 
@@ -154,30 +155,30 @@ def _check_module(name: str, install_hint: str) -> CheckResult:
     try:
         module = importlib.import_module(name)
         version = getattr(module, "__version__", None) or _dist_version(name)
-        detail = f"{name} {version}" if version else f"{name} import ok"
+        detail = _("{} {}").format(name, version) if version else _("{} import ok").format(name)
         return CheckResult(name, "ok", detail, version=str(version) if version else None)
     except Exception as exc:
-        return CheckResult(name, "fail", f"{_format_exception(exc)} | Install/repair with: {install_hint}")
+        return CheckResult(name, "fail", _("{} | Install/repair with: {}").format(_format_exception(exc), install_hint))
 
 
 def _check_proxy_support() -> CheckResult:
     proxy_values = {key: os.environ.get(key, "") for key in SOCKS_ENV_KEYS if os.environ.get(key)}
     uses_socks = any("socks" in value.lower() for value in proxy_values.values())
     if not uses_socks:
-        return CheckResult("proxy-socks", "ok", "no SOCKS proxy detected in environment", details={"uses_socks": False})
+        return CheckResult("proxy-socks", "ok", _("no SOCKS proxy detected in environment"), details={"uses_socks": False})
     try:
         importlib.import_module("socksio")
         return CheckResult(
             "proxy-socks",
             "ok",
-            "SOCKS proxy detected and socksio is available",
+            _("SOCKS proxy detected and socksio is available"),
             details={"uses_socks": True, "proxy_env_keys": sorted(proxy_values)},
         )
     except Exception as exc:
         return CheckResult(
             "proxy-socks",
             "fail",
-            f"SOCKS proxy detected but socksio is unavailable: {_format_exception(exc)} | Reinstall with: py-roller install",
+            _("SOCKS proxy detected but socksio is unavailable: {} | Reinstall with: py-roller install").format(_format_exception(exc)),
             details={"uses_socks": True, "proxy_env_keys": sorted(proxy_values)},
         )
 
@@ -206,22 +207,22 @@ def build_doctor_report() -> DoctorReport:
         platform_system=platform.system(),
         platform_machine=platform.machine(),
         checks=checks,
-        suggested_next_step="py-roller install" if bad else None,
+        suggested_next_step=_("py-roller install") if bad else None,
     )
 
 
 def print_doctor_human(report: DoctorReport) -> None:
-    print("py-roller doctor")
-    print(f"  python executable      : {report.python_executable}")
+    print(_("py-roller doctor"))
+    print(_("  python executable      : {}").format(report.python_executable))
     for item in report.checks:
         tag = item.status.upper()
-        print(f"  [{tag:<4}] {item.name:<18} {item.message}")
+        print(_("  [{tag:<4}] {name:<18} {msg}").format(tag=tag, name=item.name, msg=item.message))
 
     if not report.ok:
-        print("\nSuggested next step:")
-        print("  py-roller install")
+        print(_("\nSuggested next step:"))
+        print(_("  py-roller install"))
         return
-    print("\nEnvironment looks healthy.")
+    print(_("\nEnvironment looks healthy."))
 
 
 def print_doctor_json(report: DoctorReport) -> None:

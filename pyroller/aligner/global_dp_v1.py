@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from pyroller.i18n import _
+
 from pyroller.aligner.base import Aligner
 from pyroller.aligner.common import SequenceAlignmentSupport, logger
 from pyroller.aligner.repetition import (
@@ -32,7 +34,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         repetition: str = "none",
     ) -> None:
         if repetition not in {"none", "few", "full"}:
-            raise ValueError("repetition must be one of: none, few, full")
+            raise ValueError(_("repetition must be one of: none, few, full"))
         self.match_score = match_score
         self.mismatch_penalty = mismatch_penalty
         self.audio_gap_penalty = audio_gap_penalty
@@ -47,9 +49,9 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         lyric_lines = parsed_lyrics.lines
         min_time, max_time = self._estimate_alignment_window(transcription, global_units)
 
-        self._log_phase_heading(f"ALIGNER: GLOBAL DP (repetition={self.repetition})")
+        self._log_phase_heading(_("ALIGNER: GLOBAL DP (repetition={})").format(self.repetition))
         logger.info(
-            "Lyric lines=%d | audio units=%d | window=[%.3fs, %.3fs]",
+            _("Lyric lines=%d | audio units=%d | window=[%.3fs, %.3fs]"),
             len(lyric_lines),
             len(global_units),
             min_time,
@@ -58,10 +60,10 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
 
         if not global_units:
             stage_progress = progress.stage("aligner", total=2, unit="phase")
-            stage_progress.phase("fallback interpolation (no audio units)")
+            stage_progress.phase(_("fallback interpolation (no audio units)"))
             alignment_lines = self._interpolate_without_units(lyric_lines, min_time=min_time, max_time=max_time)
             self._finalize_line_end_times(alignment_lines, max_time=max_time)
-            stage_progress.phase("finalizing alignment result")
+            stage_progress.phase(_("finalizing alignment result"))
             report = self._build_report(
                 alignment_lines,
                 skipped_segments=skipped_segments,
@@ -77,7 +79,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 },
             )
             self._log_alignment_report(self.strategy_name, report, alignment_lines)
-            stage_progress.close("aligner complete")
+            stage_progress.close(_("aligner complete"))
             return AlignmentResult(
                 language=parsed_lyrics.language,
                 unit_type=parsed_lyrics.unit_type,
@@ -103,15 +105,15 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         else:
             # DP rows + 4 phases (inputs, recovery, monotonic, finalize).
             stage_progress = progress.stage("aligner", total=4 + max(len(lyric_units), 1), unit="step")
-        stage_progress.phase("building alignment inputs")
-        logger.info("Flattened lyric units=%d across %d lines", len(lyric_units), len(lyric_lines))
+        stage_progress.phase(_("building alignment inputs"))
+        logger.info(_("Flattened lyric units=%d across %d lines"), len(lyric_units), len(lyric_lines))
         if not lyric_units:
             alignment_lines = self._interpolate_without_units(lyric_lines, min_time=min_time, max_time=max_time)
             self._finalize_line_end_times(alignment_lines, max_time=max_time)
-            stage_progress.phase("finalizing alignment result")
+            stage_progress.phase(_("finalizing alignment result"))
             report = self._build_report(alignment_lines, skipped_segments=skipped_segments, repairs=[])
             self._log_alignment_report(self.strategy_name, report, alignment_lines)
-            stage_progress.close("aligner complete")
+            stage_progress.close(_("aligner complete"))
             return AlignmentResult(
                 language=parsed_lyrics.language,
                 unit_type=parsed_lyrics.unit_type,
@@ -132,7 +134,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             "profile": self._repeat_profile_dict([self._line_symbols(line) for line in lyric_lines]),
         }
         if self.repetition == "full":
-            stage_progress.phase("building full-repetition candidate lattice")
+            stage_progress.phase(_("building full-repetition candidate lattice"))
             assignments, repeat_stats = self._align_full_repetition_lattice(
                 lyric_lines=lyric_lines,
                 global_units=global_units,
@@ -150,7 +152,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             }
         else:
             traceback_pairs, dp_stats = self._run_global_dp(lyric_units, global_units, stage_progress=stage_progress)
-            stage_progress.phase("recovering line assignments")
+            stage_progress.phase(_("recovering line assignments"))
             assignments = self._recover_line_assignments(
                 lyric_lines=lyric_lines,
                 lyric_units=lyric_units,
@@ -162,7 +164,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 fill_unresolved=(self.repetition == "none"),
             )
             if self.repetition == "few":
-                stage_progress.phase("repairing repeated/omitted regions")
+                stage_progress.phase(_("repairing repeated/omitted regions"))
                 repeat_stats = self._repair_few_repetition_regions(
                     assignments=assignments,
                     lyric_lines=lyric_lines,
@@ -172,11 +174,11 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 )
                 self._fill_unresolved_times(assignments, min_time=min_time, max_time=max_time)
 
-        stage_progress.phase("repairing monotonic timestamps")
+        stage_progress.phase(_("repairing monotonic timestamps"))
         repaired, repairs = self._ensure_monotonic(assignments, min_time=min_time, max_time=max_time, min_gap=self.min_gap)
         alignment_lines = [self._assignment_to_alignment_line(lyric_lines[item["lyric_idx"]], item) for item in repaired]
         self._finalize_line_end_times(alignment_lines, max_time=max_time)
-        stage_progress.phase("finalizing alignment result")
+        stage_progress.phase(_("finalizing alignment result"))
 
         confidences = [line.confidence for line in alignment_lines if line.confidence > 0]
         overall_confidence = sum(confidences) / len(confidences) if confidences else 0.0
@@ -193,17 +195,17 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         )
         self._log_alignment_report(self.strategy_name, report, alignment_lines)
         if dp_stats.get("skipped"):
-            logger.info("DP stats: skipped (%s)", dp_stats.get("reason", "unknown"))
+            logger.info(_("DP stats: skipped (%s)"), dp_stats.get("reason", "unknown"))
         else:
             logger.info(
-                "DP stats: final_score=%.3f accepted_matches=%d diag_steps=%d audio_gaps=%d lyric_gaps=%d",
+                _("DP stats: final_score=%.3f accepted_matches=%d diag_steps=%d audio_gaps=%d lyric_gaps=%d"),
                 float(dp_stats["final_score"]),
                 int(dp_stats["accepted_matches"]),
                 int(dp_stats["diag_steps"]),
                 int(dp_stats["audio_gaps"]),
                 int(dp_stats["lyric_gaps"]),
             )
-        stage_progress.close("aligner complete")
+        stage_progress.close(_("aligner complete"))
         return AlignmentResult(
             language=parsed_lyrics.language,
             unit_type=parsed_lyrics.unit_type,
@@ -252,7 +254,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         global_units: list[dict[str, Any]],
         stage_progress,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        self._log_phase_heading("PHASE 1: GLOBAL DYNAMIC PROGRAMMING")
+        self._log_phase_heading(_("PHASE 1: GLOBAL DYNAMIC PROGRAMMING"))
         m = len(lyric_units)
         n = len(global_units)
         dp = [[0.0] * (n + 1) for _ in range(m + 1)]
@@ -283,7 +285,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 else:
                     dp[i][j] = up_score
                     back[i][j] = "up"
-            stage_progress.update(1, message=f"dp row {i}/{m}")
+            stage_progress.update(1, message=_("dp row {}/{}").format(i, m))
 
         traceback_pairs: list[dict[str, Any]] = []
         i = m
@@ -329,7 +331,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
 
         traceback_pairs.reverse()
         logger.info(
-            "DP completed for %d lyric units x %d audio units | final_score=%.3f",
+            _("DP completed for %d lyric units x %d audio units | final_score=%.3f"),
             m,
             n,
             dp[m][n],
@@ -356,7 +358,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         max_time: float,
         fill_unresolved: bool = True,
     ) -> list[dict[str, Any]]:
-        self._log_phase_heading("PHASE 2: LINE ASSIGNMENT RECOVERY")
+        self._log_phase_heading(_("PHASE 2: LINE ASSIGNMENT RECOVERY"))
         matched_positions_by_line: dict[int, list[int]] = {line.line_index: [] for line in lyric_lines}
         similarity_by_line: dict[int, list[float]] = {line.line_index: [] for line in lyric_lines}
         matched_units_by_line: dict[int, int] = {line.line_index: 0 for line in lyric_lines}
@@ -435,7 +437,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             assignments.append(assignment)
 
         logger.info(
-            "Recovered direct line assignments=%d | pending interpolation=%d",
+            _("Recovered direct line assignments=%d | pending interpolation=%d"),
             len(assignments) - len(unresolved_indices),
             len(unresolved_indices),
         )
@@ -444,7 +446,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         for assignment in assignments:
             log_time = assignment["time"] if assignment["time"] is not None else -1.0
             logger.debug(
-                "RECOVERED L%02d @ %.3fs conf=%.3f [%s] range=%s text=%r",
+                _("RECOVERED L%02d @ %.3fs conf=%.3f [%s] range=%s text=%r"),
                 assignment["lyric_idx"] + 1,
                 float(log_time),
                 float(assignment["confidence"]),
@@ -517,7 +519,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         min_time: float,
         max_time: float,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        self._log_phase_heading("PHASE 1: FULL REPETITION CANDIDATE LATTICE")
+        self._log_phase_heading(_("PHASE 1: FULL REPETITION CANDIDATE LATTICE"))
         line_symbols = [self._line_symbols(line) for line in lyric_lines]
         top_k = min(128, max(24, len(lyric_lines) + 8))
         candidates_by_line, candidate_count = self._find_candidates_for_lines(
@@ -568,7 +570,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             "unresolved_count": sum(1 for item in assignments if item.get("method") == "interpolate"),
         }
         logger.info(
-            "Full repetition lattice: candidates=%d selected=%d interpolated=%d",
+            _("Full repetition lattice: candidates=%d selected=%d interpolated=%d"),
             candidate_count,
             selected_count,
             int(stats["unresolved_count"]),
@@ -583,7 +585,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         min_time: float,
         max_time: float,
     ) -> dict[str, Any]:
-        self._log_phase_heading("PHASE 3: FEW REPETITION LOCAL LATTICE REPAIR")
+        self._log_phase_heading(_("PHASE 3: FEW REPETITION LOCAL LATTICE REPAIR"))
         line_symbols = [self._line_symbols(line) for line in lyric_lines]
         anchors = select_anchor_chain(assignments=assignments, line_symbols=line_symbols)
         anchor_by_line = {anchor.lyric_idx: anchor for anchor in anchors}
@@ -704,7 +706,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             "repaired_count": repaired_count,
         }
         logger.info(
-            "Few repetition repair: anchors=%d weak_lines=%d segments=%d repaired=%d candidates=%d",
+            _("Few repetition repair: anchors=%d weak_lines=%d segments=%d repaired=%d candidates=%d"),
             len(anchors),
             len(weak_lines),
             len(segments),

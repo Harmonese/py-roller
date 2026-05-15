@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from pathlib import Path
 from typing import Any
 
@@ -45,19 +47,19 @@ class DereverbFilter(AudioFilter):
             from nara_wpe.wpe import wpe_v8  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "dereverb dependencies are not installed. Install with: pip install nara_wpe numpy soundfile scipy bottleneck"
+                _("dereverb dependencies are not installed. Install with: pip install nara_wpe numpy soundfile scipy bottleneck")
             ) from exc
 
         if audio_artifact.path is None:
-            raise ValueError("dereverb requires an audio artifact with a concrete path")
+            raise ValueError(_("dereverb requires an audio artifact with a concrete path"))
 
         source_path = Path(audio_artifact.path)
         if not source_path.exists():
-            raise FileNotFoundError(f"Audio file not found for dereverb filter: {source_path}")
+            raise FileNotFoundError(_("Audio file not found for dereverb filter: {}").format(source_path))
 
         audio, sample_rate = sf.read(str(source_path), always_2d=True)
         if audio.size == 0:
-            logger.warning("dereverb received empty audio at %s; forwarding unchanged", source_path)
+            logger.warning(_("dereverb received empty audio at %s; forwarding unchanged"), source_path)
             return audio_artifact
 
         time_major = np.asarray(audio, dtype=np.float64)
@@ -67,7 +69,7 @@ class DereverbFilter(AudioFilter):
 
         if original_samples < self.stft_size:
             logger.warning(
-                "dereverb input shorter than stft_size (%d < %d); forwarding unchanged",
+                _("dereverb input shorter than stft_size (%d < %d); forwarding unchanged"),
                 original_samples,
                 self.stft_size,
             )
@@ -76,7 +78,7 @@ class DereverbFilter(AudioFilter):
         try:
             Y = stft(channel_major, size=self.stft_size, shift=self.stft_shift)
             if Y.ndim != 3:
-                raise RuntimeError(f"Unexpected STFT rank from nara_wpe: {Y.shape}")
+                raise RuntimeError(_("Unexpected STFT rank from nara_wpe: {}").format(Y.shape))
             Y_fdt = np.transpose(Y, (2, 0, 1))
             X_fdt = wpe_v8(
                 Y_fdt,
@@ -90,7 +92,7 @@ class DereverbFilter(AudioFilter):
             X = np.transpose(X_fdt, (1, 2, 0))
             dereverb = istft(X, size=self.stft_size, shift=self.stft_shift)
         except Exception as exc:
-            raise RuntimeError(f"dereverb failed while processing {source_path}: {exc}") from exc
+            raise RuntimeError(_("dereverb failed while processing {}: {}").format(source_path, exc)) from exc
 
         dereverb = np.asarray(dereverb, dtype=np.float64)
         if dereverb.ndim == 1:
@@ -111,7 +113,7 @@ class DereverbFilter(AudioFilter):
 
         output_peak = float(np.max(np.abs(dereverb))) if dereverb.size else 0.0
         logger.info(
-            "Applied nara_wpe dereverberation to %s -> %s | channels=%d sr=%d stft=%d/%d taps=%d delay=%d iterations=%d",
+            _("Applied nara_wpe dereverberation to %s -> %s | channels=%d sr=%d stft=%d/%d taps=%d delay=%d iterations=%d"),
             source_path,
             destination,
             int(processed.shape[1]) if processed.ndim == 2 else 1,

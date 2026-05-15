@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from collections import OrderedDict
 from pathlib import Path
 
@@ -57,7 +59,7 @@ class LRCWriter(Writer):
                     f.write(f"{self._fmt(line.assigned_time)} {line.raw_text}\n")
                     written_line_count += 1
 
-        logger.info("Wrote %d lines to %s using writer=%s", written_line_count, output_path, self.backend_name)
+        logger.info(_("Wrote %d lines to %s using writer=%s"), written_line_count, output_path, self.backend_name)
         return WriteResult(
             output_path=output_path,
             writer_backend=self.backend_name,

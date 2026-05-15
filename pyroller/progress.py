@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pyroller.i18n import _
+
 import json
 import logging
 import sys
@@ -122,23 +124,23 @@ class LoggingStageProgress(StageProgress):
         suffix = f" [{self.completed}/{self.total} {self.unit}]" if self.total > 0 else ""
         label = f"{self.prefix}{self.name}"
         if message:
-            logger.info("%s%s - %s", label, suffix, message)
+            logger.info(_("%s%s - %s"), label, suffix, message)
         else:
-            logger.info("%s%s", label, suffix)
+            logger.info(_("%s%s"), label, suffix)
 
     def close(self, message: str | None = None) -> None:
         label = f"{self.prefix}{self.name}"
         if message:
-            logger.info("%s complete - %s", label, message)
+            logger.info(_("%s complete - %s"), label, message)
         else:
-            logger.info("%s complete", label)
+            logger.info(_("%s complete"), label)
 
     def fail(self, message: str | None = None) -> None:
         label = f"{self.prefix}{self.name}"
         if message:
-            logger.error("%s failed - %s", label, message)
+            logger.error(_("%s failed - %s"), label, message)
         else:
-            logger.error("%s failed", label)
+            logger.error(_("%s failed"), label)
 
 
 class LoggingProgressReporter(ProgressReporter):
@@ -173,7 +175,7 @@ class TqdmStageProgress(StageProgress):
 
     def fail(self, message: str | None = None) -> None:
         if message:
-            self._bar.set_postfix_str(("FAILED: " + message)[:80], refresh=False)
+            self._bar.set_postfix_str((_("FAILED: ") + message)[:80], refresh=False)
         self._bar.close()
 
 
@@ -198,7 +200,7 @@ class JsonlStageProgress(StageProgress):
             total=self.total,
             unit=self.unit,
             progress=_ratio(self.completed, self.total),
-            message=f"{self.name} started",
+            message=_("{} started").format(self.name),
         )
 
     def _emit(self, event_type: str, **payload: Any) -> None:
@@ -235,7 +237,7 @@ class JsonlStageProgress(StageProgress):
             total=self.total,
             unit=self.unit,
             progress=1.0 if self.total > 0 else None,
-            message=message or f"{self.name} complete",
+            message=message or _("{} complete").format(self.name),
             done=True,
         )
 
@@ -246,7 +248,7 @@ class JsonlStageProgress(StageProgress):
             total=self.total,
             unit=self.unit,
             progress=_ratio(self.completed, self.total),
-            message=message or f"{self.name} failed",
+            message=message or _("{} failed").format(self.name),
             failed=True,
         )
 

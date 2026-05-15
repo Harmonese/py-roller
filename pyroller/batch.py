@@ -8,6 +8,7 @@ from typing import Any, Iterable, Optional
 
 import yaml
 
+from pyroller.i18n import _
 from pyroller.domain import PipelineRequest
 from pyroller.logging_utils import configure_logging
 from pyroller.pipeline import ComposablePipelineRunner
@@ -79,7 +80,7 @@ class BatchBuilder:
         alignment_result_glob: str = "*.json",
     ) -> None:
         if pair_by != "stem":
-            raise ValueError(f"Unsupported --pair-by: {pair_by}. Currently only 'stem' is supported.")
+            raise ValueError(_("Unsupported --pair-by: {}. Currently only 'stem' is supported.").format(pair_by))
         self.pair_by = pair_by
         self.audio_glob = audio_glob
         self.lyrics_glob = lyrics_glob
@@ -90,7 +91,7 @@ class BatchBuilder:
     def build_tasks(self, request: PipelineRequest) -> list[BatchTask]:
         stages = ComposablePipelineRunner()._resolve_execution_plan(request)
         if not stages:
-            raise ValueError("At least one stage is required for batch mode.")
+            raise ValueError(_("At least one stage is required for batch mode."))
         first_stage = stages[0]
 
         if first_stage in {"splitter", "filter", "transcriber"}:
@@ -101,22 +102,22 @@ class BatchBuilder:
             return self._build_from_timed_and_parsed(request)
         if first_stage == "writer":
             return self._build_from_alignment_only(request)
-        raise ValueError(f"Unsupported batch chain start: {first_stage}")
+        raise ValueError(_("Unsupported batch chain start: {}").format(first_stage))
 
     def _glob_dir(self, directory: Optional[Path], pattern: str, label: str) -> list[Path]:
         if directory is None:
-            raise ValueError(f"Batch mode requires {label} directory.")
+            raise ValueError(_("Batch mode requires {} directory.").format(label))
         if not directory.exists() or not directory.is_dir():
-            raise ValueError(f"{label} must be an existing directory in batch mode: {directory}")
+            raise ValueError(_("{} must be an existing directory in batch mode: {}").format(label, directory))
         matches = sorted(p for p in directory.glob(pattern) if p.is_file())
         if not matches:
-            raise ValueError(f"No files matched {pattern!r} under {directory} for {label}.")
+            raise ValueError(_("No files matched {!r} under {} for {}.").format(pattern, directory, label))
         return matches
 
     def _warn_unmatched(self, label: str, unmatched: Iterable[str]) -> None:
         items = sorted(set(unmatched))
         if items:
-            logger.warning("Ignoring unmatched %s stems: %s", label, ", ".join(items))
+            logger.warning(_("Ignoring unmatched %s stems: %s"), label, ", ".join(items))
 
     def _map_by_stem(self, files: Iterable[Path]) -> dict[str, Path]:
         mapping: dict[str, Path] = {}
@@ -129,7 +130,7 @@ class BatchBuilder:
                 mapping[stem] = path
         if duplicates:
             dupes = ", ".join(sorted(set(duplicates)))
-            raise ValueError(f"Duplicate stems are not allowed for --pair-by stem: {dupes}")
+            raise ValueError(_("Duplicate stems are not allowed for --pair-by stem: {}").format(dupes))
         return mapping
 
     def _build_from_audio_and_maybe_lyrics(self, request: PipelineRequest, stages: list[str]) -> list[BatchTask]:
@@ -143,7 +144,7 @@ class BatchBuilder:
             self._warn_unmatched("audio", set(audio_by_stem) - set(matched))
             self._warn_unmatched("lyrics", set(lyrics_by_stem) - set(matched))
             if not matched:
-                raise ValueError("No matched audio/lyrics pairs found by stem.")
+                raise ValueError(_("No matched audio/lyrics pairs found by stem."))
             stems = matched
         else:
             stems = sorted(audio_by_stem)
@@ -175,7 +176,7 @@ class BatchBuilder:
         self._warn_unmatched("timed-units", set(timed_by_stem) - set(matched))
         self._warn_unmatched("parsed-lyrics", set(parsed_by_stem) - set(matched))
         if not matched:
-            raise ValueError("No matched timed_units/parsed_lyrics pairs found by stem.")
+            raise ValueError(_("No matched timed_units/parsed_lyrics pairs found by stem."))
         return [
             self._task_for_stem(
                 index=index,
@@ -240,42 +241,42 @@ class ManifestBatchBuilder:
         try:
             stages = runner._resolve_execution_plan(request)
             if not stages:
-                raise ValueError("At least one stage is required for batch mode.")
+                raise ValueError(_("At least one stage is required for batch mode."))
             entries = self._load_entries()
             tasks: list[BatchTask] = []
             seen_stems: set[str] = set()
             output_owner: dict[Path, str] = {}
             for index, entry in enumerate(entries, start=1):
                 if not isinstance(entry, dict):
-                    raise ValueError(f"Manifest task #{index} must be a mapping/object.")
+                    raise ValueError(_("Manifest task #{} must be a mapping/object.").format(index))
                 task = self._task_from_entry(index, entry, request)
                 runner._validate_request(task.request, stages)
             if task.stem in seen_stems:
-                raise ValueError(f"Manifest task ids/stems must be unique. Duplicate: {task.stem}")
+                raise ValueError(_("Manifest task ids/stems must be unique. Duplicate: {}").format(task.stem))
             seen_stems.add(task.stem)
             for output_path in task.expected_outputs:
                 resolved = output_path.resolve()
                 owner = output_owner.get(resolved)
                 if owner is not None:
                     raise ValueError(
-                        f"Manifest output path conflict: {resolved} is declared by both '{owner}' and '{task.stem}'. "
-                        "Each task must write to unique final output paths."
+                        _("Manifest output path conflict: {} is declared by both '{}' and '{}'. "
+                          "Each task must write to unique final output paths.").format(resolved, owner, task.stem)
                     )
                 output_owner[resolved] = task.stem
             tasks.append(task)
         finally:
             runner.close()
         if not tasks:
-            raise ValueError(f"Manifest {self.manifest_path} did not define any tasks.")
+            raise ValueError(_("Manifest {} did not define any tasks.").format(self.manifest_path))
         return tasks
 
     def _load_entries(self) -> list[dict[str, Any]]:
         if not self.manifest_path.exists() or not self.manifest_path.is_file():
-            raise ValueError(f"Manifest path must be an existing YAML file: {self.manifest_path}")
+            raise ValueError(_("Manifest path must be an existing YAML file: {}").format(self.manifest_path))
         with self.manifest_path.open("r", encoding="utf-8") as handle:
             data = yaml.safe_load(handle)
         if data is None:
-            raise ValueError(f"Manifest {self.manifest_path} is empty.")
+            raise ValueError(_("Manifest {} is empty.").format(self.manifest_path))
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
@@ -283,22 +284,23 @@ class ManifestBatchBuilder:
             if isinstance(tasks, list):
                 return tasks
         raise ValueError(
-            "Manifest YAML must be either a top-level list of tasks or an object with a 'tasks' list. "
-            "Example:\n"
-            "tasks:\n"
-            "  - id: song01\n"
-            "    audio: ./audio/song01.mp3\n"
-            "    lyrics: ./lyrics/song01.txt\n"
-            "    output_roller: ./out/song01.lrc"
+            _("Manifest YAML must be either a top-level list of tasks or an object with a 'tasks' list. "
+              "Example:\n"
+              "tasks:\n"
+              "  - id: song01\n"
+              "    audio: ./audio/song01.mp3\n"
+              "    lyrics: ./lyrics/song01.txt\n"
+              "    output_roller: ./out/song01.lrc")
         )
 
     def _task_from_entry(self, index: int, entry: dict[str, Any], request: PipelineRequest) -> BatchTask:
         unknown = sorted(set(entry) - _MANIFEST_ALLOWED_KEYS)
         if unknown:
             raise ValueError(
-                f"Manifest task #{index} contains unsupported keys: {', '.join(unknown)}. "
-                "Only input/output paths and optional 'id' are allowed. "
-                "Do not put stages, language, backend, jobs, or filter settings inside the manifest."
+                _("Manifest task #{} contains unsupported keys: {}. "
+                  "Only input/output paths and optional 'id' are allowed. "
+                  "Do not put stages, language, backend, jobs, or filter settings inside the manifest.").format(
+                    index, ", ".join(unknown))
             )
         stem = self._derive_task_stem(index, entry)
         task_request = PipelineRequest(
@@ -330,13 +332,13 @@ class ManifestBatchBuilder:
             stem = str(explicit).strip()
             if stem:
                 return stem
-            raise ValueError(f"Manifest task #{index} has an empty 'id'.")
+            raise ValueError(_("Manifest task #{} has an empty 'id'.").format(index))
         for key in _MANIFEST_INPUT_KEYS + _MANIFEST_OUTPUT_KEYS:
             raw = entry.get(key)
             if raw is not None:
                 return Path(str(raw)).stem
         raise ValueError(
-            f"Manifest task #{index} must declare at least one input or output path so a task id/stem can be derived."
+            _("Manifest task #{} must declare at least one input or output path so a task id/stem can be derived.").format(index)
         )
 
     def _path_value(self, entry: dict[str, Any], key: str) -> Optional[Path]:
@@ -345,7 +347,7 @@ class ManifestBatchBuilder:
             return None
         value = str(raw).strip()
         if not value:
-            raise ValueError(f"Manifest field '{key}' cannot be an empty path.")
+            raise ValueError(_("Manifest field '{}' cannot be an empty path.").format(key))
         path = Path(value)
         if not path.is_absolute():
             path = (self.manifest_path.parent / path).resolve()
@@ -392,7 +394,7 @@ def _run_single_batch_task(task: BatchTask, execution_context: PipelineExecution
             index=task.index,
             stem=task.stem,
             status="ok",
-            message="completed",
+            message=_("completed"),
             outputs=task.expected_outputs,
             log_file=None if cleaned else log_file,
             cleaned=cleaned,
@@ -438,7 +440,7 @@ class BatchRunner:
         runnable: list[BatchTask] = []
         for task in tasks:
             if skip_existing and task.expected_outputs and all(path.exists() for path in task.expected_outputs):
-                results.append(BatchTaskResult(index=task.index, stem=task.stem, status="skipped", message="all declared outputs already exist", outputs=task.expected_outputs))
+                results.append(BatchTaskResult(index=task.index, stem=task.stem, status="skipped", message=_("all declared outputs already exist"), outputs=task.expected_outputs))
             else:
                 runnable.append(task)
 
@@ -450,7 +452,7 @@ class BatchRunner:
                     results.append(result)
                     if result.status == "failed" and not continue_on_error:
                         for remaining in runnable[position + 1 :]:
-                            results.append(BatchTaskResult(index=remaining.index, stem=remaining.stem, status="aborted", message="batch stopped after earlier failure", outputs=remaining.expected_outputs))
+                            results.append(BatchTaskResult(index=remaining.index, stem=remaining.stem, status="aborted", message=_("batch stopped after earlier failure"), outputs=remaining.expected_outputs))
                         break
             finally:
                 shared_context.close()
@@ -492,7 +494,7 @@ class BatchRunner:
                         worker.join(timeout=1)
             if aborted:
                 for task in sorted((task_by_stem[stem] for stem in pending_stems), key=lambda item: item.index):
-                    results.append(BatchTaskResult(index=task.index, stem=task.stem, status="aborted", message="batch stopped after earlier failure", outputs=task.expected_outputs))
+                    results.append(BatchTaskResult(index=task.index, stem=task.stem, status="aborted", message=_("batch stopped after earlier failure"), outputs=task.expected_outputs))
 
         completed = sum(1 for item in results if item.status == "ok")
         failed = sum(1 for item in results if item.status == "failed")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from collections import Counter
 from typing import Any
 
@@ -25,8 +27,8 @@ class MultilingualIPAParser(LyricsParser):
         total_segments = 0
 
         logger.info("=" * 58)
-        logger.info("MULTILINGUAL IPA PARSER")
-        logger.info("Strategy priority: A=gruut, B=dedicated, C=phonemizer/espeak, D=empty")
+        logger.info(_("MULTILINGUAL IPA PARSER"))
+        logger.info(_("Strategy priority: A=gruut, B=dedicated, C=phonemizer/espeak, D=empty"))
         logger.info("=" * 58)
 
         for line in lyrics_document.lines:
@@ -71,7 +73,7 @@ class MultilingualIPAParser(LyricsParser):
                 )
             )
             logger.debug(
-                "L%-3d routes=%s languages=%s segments=%s",
+                _("L%-3d routes=%s languages=%s segments=%s"),
                 line.line_index + 1,
                 route_summary["route_counts"],
                 route_summary["language_counts"],
@@ -79,7 +81,7 @@ class MultilingualIPAParser(LyricsParser):
             )
 
         logger.info(
-            "Parsed %d lyric lines into IPA phones (segments=%d routes=%s languages=%s)",
+            _("Parsed %d lyric lines into IPA phones (segments=%d routes=%s languages=%s)"),
             len(parsed_lines),
             total_segments,
             dict(total_routes),

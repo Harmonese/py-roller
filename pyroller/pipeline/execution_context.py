@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 
+from pyroller.i18n import _
 from pyroller.transcriber.base import Transcriber
 from pyroller.transcriber.registry import build_transcriber, resolve_transcriber_backend, sanitize_transcriber_config
 
@@ -29,14 +30,14 @@ class PipelineExecutionContext:
         if self._transcriber is None or self._transcriber_key != key:
             if self._transcriber is not None and self._transcriber_key is not None:
                 logger.info(
-                    "Execution context switching transcriber: old_backend=%s old_language=%s new_backend=%s new_language=%s",
+                    _("Execution context switching transcriber: old_backend=%s old_language=%s new_backend=%s new_language=%s"),
                     self._transcriber_key[1],
                     self._transcriber_key[0],
                     key[1],
                     key[0],
                 )
             self.close_transcriber()
-            logger.info("Execution context building transcriber backend=%s language=%s", chosen_backend, effective_language)
+            logger.info(_("Execution context building transcriber backend=%s language=%s"), chosen_backend, effective_language)
             self._transcriber = build_transcriber(
                 language=effective_language,
                 backend_name=chosen_backend,
@@ -55,15 +56,15 @@ class PipelineExecutionContext:
         try:
             if transcriber_key is not None:
                 logger.info(
-                    "Execution context closing transcriber backend=%s language=%s",
+                    _("Execution context closing transcriber backend=%s language=%s"),
                     transcriber_key[1],
                     transcriber_key[0],
                 )
             else:
-                logger.info("Execution context closing transcriber backend=<unknown> language=<unknown>")
+                logger.info(_("Execution context closing transcriber backend=<unknown> language=<unknown>"))
             transcriber.close()
         except Exception:
-            logger.exception("Execution context failed to close transcriber cleanly")
+            logger.exception(_("Execution context failed to close transcriber cleanly"))
 
     def close(self) -> None:
         self.close_transcriber()

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from typing import Any
 
 from pyroller.domain import LyricLine, LyricUnit, LyricsDocument, ParsedLyrics
@@ -50,7 +52,7 @@ class EnglishARPAbetParser(LyricsParser):
                 )
             )
 
-        logger.info("Parsed %d lyric lines into ARPAbet phones", len(parsed_lines))
+        logger.info(_("Parsed %d lyric lines into ARPAbet phones"), len(parsed_lines))
         return ParsedLyrics(
             language=language,
             backend="en_arpabet",

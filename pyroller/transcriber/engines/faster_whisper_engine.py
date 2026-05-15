@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import gc
+
+from pyroller.i18n import _
 import importlib.metadata
 import logging
 from dataclasses import dataclass
@@ -111,14 +113,14 @@ class FasterWhisperEngine(TranscriberEngine):
     def _prepare_bundle(self, language: str, stage=None) -> _PreparedFasterWhisperBundle:
         if self._is_prepared_for(language):
             if stage is not None:
-                stage.phase("reusing prepared faster-whisper model")
+                stage.phase(_("reusing prepared faster-whisper model"))
             return self._prepared  # type: ignore[return-value]
 
         with hf_download_environment(self.hf_download_config, local_files_only=self.local_files_only):
             try:
                 from faster_whisper import WhisperModel  # type: ignore
             except ImportError as exc:  # pragma: no cover
-                raise RuntimeError("faster-whisper is not installed. Install with: pip install faster-whisper") from exc
+                raise RuntimeError(_("faster-whisper is not installed. Install with: pip install faster-whisper")) from exc
 
             try:
                 from faster_whisper import BatchedInferencePipeline  # type: ignore
@@ -127,15 +129,15 @@ class FasterWhisperEngine(TranscriberEngine):
 
             self.close()
             if stage is not None:
-                stage.phase("resolving transcriber model")
+                stage.phase(_("resolving transcriber model"))
             plan = self._build_resolution_plan(language, materialize=True, stage=stage)
             model = None
             batched_pipeline = None
             try:
                 model_ref = str(plan.resolved_model_dir) if plan.resolved_model_dir is not None else plan.effective_model_name
-                logger.info("Preparing faster-whisper model=%s from=%s device=%s", self.model_name, model_ref, self.device)
+                logger.info(_("Preparing faster-whisper model=%s from=%s device=%s"), self.model_name, model_ref, self.device)
                 if stage is not None:
-                    stage.phase("loading faster-whisper model")
+                    stage.phase(_("loading faster-whisper model"))
                 model = WhisperModel(
                     model_ref,
                     device=self.device,
@@ -146,7 +148,7 @@ class FasterWhisperEngine(TranscriberEngine):
                 if self.batch_size > 1 and BatchedInferencePipeline is not None:
                     batched_pipeline = BatchedInferencePipeline(model=model)
                 elif self.batch_size > 1 and BatchedInferencePipeline is None:
-                    logger.warning("BatchedInferencePipeline is unavailable in the installed faster-whisper package; falling back to non-batched inference")
+                    logger.warning(_("BatchedInferencePipeline is unavailable in the installed faster-whisper package; falling back to non-batched inference"))
                 runtime = plan.runtime_record()
                 runtime["compatibility_bundle"] = self._runtime_versions()
                 runtime["batching_enabled"] = batched_pipeline is not None
@@ -172,15 +174,15 @@ class FasterWhisperEngine(TranscriberEngine):
         bundle = self._prepared
         self._prepared = None
         if bundle is None:
-            logger.debug("FasterWhisperEngine close() called with no prepared bundle to release")
+            logger.debug(_("FasterWhisperEngine close() called with no prepared bundle to release"))
             return
-        logger.info("Closing prepared faster-whisper model=%s language=%s device=%s", self.model_name, bundle.language, self.device)
+        logger.info(_("Closing prepared faster-whisper model=%s language=%s device=%s"), self.model_name, bundle.language, self.device)
         try:
             bundle.batched_pipeline = None
             bundle.model = None
         finally:
             self._clear_device_cache()
-            logger.info("Closed prepared faster-whisper model=%s language=%s device=%s", self.model_name, bundle.language, self.device)
+            logger.info(_("Closed prepared faster-whisper model=%s language=%s device=%s"), self.model_name, bundle.language, self.device)
 
     def prepare(self, language: str, stage=None) -> dict[str, object]:
         bundle = self._prepare_bundle(language, stage=stage)
@@ -188,19 +190,19 @@ class FasterWhisperEngine(TranscriberEngine):
 
     def transcribe(self, audio_artifact: AudioArtifact, language: str, stage=None) -> EngineOutput:
         if stage is not None:
-            stage.phase("loading faster-whisper backend")
+            stage.phase(_("loading faster-whisper backend"))
         try:
             import faster_whisper  # noqa: F401  # type: ignore
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("faster-whisper is not installed. Install with: pip install faster-whisper") from exc
+            raise RuntimeError(_("faster-whisper is not installed. Install with: pip install faster-whisper")) from exc
 
         audio_path = Path(audio_artifact.path) if audio_artifact.path is not None else None
         if audio_path is None or not audio_path.exists():
-            raise FileNotFoundError(f"Audio file not found for faster-whisper backend: {audio_artifact.path}")
+            raise FileNotFoundError(_("Audio file not found for faster-whisper backend: {}").format(audio_artifact.path))
 
         bundle = self._prepare_bundle(language, stage=stage)
         logger.info(
-            "Using prepared faster-whisper model=%s from=%s device=%s batch_size=%s",
+            _("Using prepared faster-whisper model=%s from=%s device=%s batch_size=%s"),
             self.model_name,
             bundle.plan.resolved_model_dir,
             self.device,
@@ -212,7 +214,7 @@ class FasterWhisperEngine(TranscriberEngine):
             # actually completed. GUI frontends otherwise look stuck at 100% while
             # faster-whisper is still transcribing. Detailed percent updates are
             # emitted below as segments are yielded.
-            stage.update(advance=0, message="running transcription inference")
+            stage.update(advance=0, message=_("running transcription inference"))
 
         transcribe_kwargs = {
             "word_timestamps": True,
@@ -223,7 +225,7 @@ class FasterWhisperEngine(TranscriberEngine):
         # When vad_filter is disabled, we must use the non-batched path.
         use_batched = bundle.batched_pipeline is not None and self.vad_filter
         if not self.vad_filter and bundle.batched_pipeline is not None:
-            logger.info("VAD is disabled; BatchedInferencePipeline requires VAD — falling back to non-batched transcription")
+            logger.info(_("VAD is disabled; BatchedInferencePipeline requires VAD — falling back to non-batched transcription"))
         if use_batched:
             segments_iter, info = bundle.batched_pipeline.transcribe(
                 str(audio_path),
@@ -243,7 +245,7 @@ class FasterWhisperEngine(TranscriberEngine):
             stage.event(
                 "stage_progress",
                 stage="transcriber",
-                message="Transcribing audio",
+                message=_("Transcribing audio"),
                 audio_duration=audio_duration_hint,
                 duration_after_vad=duration_after_vad,
                 progress=None,
@@ -255,7 +257,7 @@ class FasterWhisperEngine(TranscriberEngine):
 
         def _heartbeat_payload() -> dict[str, object]:
             payload: dict[str, object] = {
-                "message": "Still running transcription inference",
+                "message": _("Still running transcription inference"),
                 "segments": len(segments),
                 "audio_duration": audio_duration_hint,
                 "duration_after_vad": duration_after_vad,
@@ -269,7 +271,7 @@ class FasterWhisperEngine(TranscriberEngine):
         with progress_heartbeat(
             stage,
             event_stage="transcriber",
-            message="Still running transcription inference",
+            message=_("Still running transcription inference"),
             interval_seconds=10.0,
             payload_factory=_heartbeat_payload,
         ):
@@ -287,7 +289,7 @@ class FasterWhisperEngine(TranscriberEngine):
                     stage.event(
                         "stage_progress",
                         stage="transcriber",
-                        message="Transcribing audio",
+                        message=_("Transcribing audio"),
                         completed=percent_bucket if progress_value is not None else len(segments),
                         total=100 if progress_value is not None else 0,
                         unit="%" if progress_value is not None else "segment",
@@ -300,7 +302,7 @@ class FasterWhisperEngine(TranscriberEngine):
                     )
 
         if stage is not None:
-            stage.update(advance=1, message="transcription inference complete")
+            stage.update(advance=1, message=_("transcription inference complete"))
         spans = self._segments_to_spans(segments)
         raw_text = " ".join(text for text in (self._normalized_text(self._field(segment, "text")) for segment in segments) if text) or None
         audio_duration = self._infer_audio_duration(info, segments)

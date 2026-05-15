@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from pathlib import Path
 from typing import Any
 
@@ -39,19 +41,19 @@ class AdaptiveNoiseGateFilter(AudioFilter):
             import soundfile as sf  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "noise_gate dependencies are not installed. Install with: pip install numpy soundfile"
+                _("noise_gate dependencies are not installed. Install with: pip install numpy soundfile")
             ) from exc
 
         if audio_artifact.path is None:
-            raise ValueError("noise_gate requires an audio artifact with a concrete path")
+            raise ValueError(_("noise_gate requires an audio artifact with a concrete path"))
 
         source_path = Path(audio_artifact.path)
         if not source_path.exists():
-            raise FileNotFoundError(f"Audio file not found for noise_gate filter: {source_path}")
+            raise FileNotFoundError(_("Audio file not found for noise_gate filter: {}").format(source_path))
 
         audio, sample_rate = sf.read(str(source_path), always_2d=True)
         if audio.size == 0:
-            logger.warning("noise_gate received empty audio at %s; forwarding unchanged", source_path)
+            logger.warning(_("noise_gate received empty audio at %s; forwarding unchanged"), source_path)
             return audio_artifact
 
         mono = audio.mean(axis=1)
@@ -68,7 +70,7 @@ class AdaptiveNoiseGateFilter(AudioFilter):
 
         suppressed_ratio = float(1.0 - keep_mask.mean()) if keep_mask.size else 0.0
         logger.info(
-            "Applied adaptive noise gate to %s -> %s | threshold_db=%.2f suppressed_frames=%.2f%%",
+            _("Applied adaptive noise gate to %s -> %s | threshold_db=%.2f suppressed_frames=%.2f%%"),
             source_path,
             destination,
             threshold_db,

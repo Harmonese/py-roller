@@ -66,6 +66,19 @@ py-roller install --progress-format both --output-format json     # debug both s
 
 `--progress-format jsonl` emits `PYROLLER_EVENT` lines for install lifecycle events, selected profiles, subprocess starts/completions, subprocess output, validation, doctor, completion, failures, and heartbeat messages when a pip subprocess is still running without output. `--output-format json` prints a final install report containing the requested profile, selected profile, step results, validation results, and doctor summary when doctor is run.
 
+## Language / i18n
+
+py-roller automatically detects the system locale and displays Chinese output when the environment is `zh_CN.UTF-8` or similar. English is used as the fallback.
+
+Override the language explicitly:
+
+```bash
+PYROLLER_LANG=zh py-roller --help    # Chinese
+PYROLLER_LANG=en py-roller --help    # English
+```
+
+All user-facing strings are translated: CLI help, pipeline summaries, doctor reports, install progress, error messages, and argparse built-in strings.
+
 ## Quick start
 
 Set `--language` explicitly whenever the song language is known. Use `zh` for Chinese, `en` for English, and `mul` only when you need the multilingual fallback.

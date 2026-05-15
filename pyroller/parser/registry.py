@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+
+from pyroller.i18n import _
 import logging
 from typing import Any
 
@@ -40,7 +42,7 @@ def resolve_parser_language(language: str) -> str:
     normalized = (language or "").strip().lower()
     if normalized in _SUPPORTED_LANGUAGES:
         return normalized
-    logger.error("Unsupported language=%s for parser. Falling back to language=%s.", language, _FALLBACK_LANGUAGE)
+    logger.error(_("Unsupported language=%s for parser. Falling back to language=%s."), language, _FALLBACK_LANGUAGE)
     return _FALLBACK_LANGUAGE
 
 

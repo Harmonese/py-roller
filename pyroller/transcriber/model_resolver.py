@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+
+from pyroller.i18n import _
 import logging
 import os
 from dataclasses import dataclass, field
@@ -105,13 +107,13 @@ class TranscriberModelResolver:
         self._ensure_store_layout()
         effective_model_name = self.requested_model_name or _DEFAULT_MODEL_NAME_BY_BACKEND.get(self.backend)
         if not effective_model_name:
-            raise ValueError(f"No default model is defined for transcriber backend {self.backend!r}. Please pass --transcriber-model-name.")
+            raise ValueError(_("No default model is defined for transcriber backend {!r}. Please pass --transcriber-model-name.").format(self.backend))
 
         local_ref = self._resolve_explicit_local_path(effective_model_name)
         if local_ref is not None:
             if not local_ref.exists():
                 raise FileNotFoundError(
-                    f"Transcriber model reference points to a local path that does not exist: {local_ref}"
+                    _("Transcriber model reference points to a local path that does not exist: {}").format(local_ref)
                 )
             plan = TranscriberResolutionPlan(
                 backend=self.backend,
@@ -128,7 +130,7 @@ class TranscriberModelResolver:
                 resolved_model_dir=local_ref,
                 hf_download=self.hf_download_config.summary(),
             )
-            plan.validations.append("resolved explicit local model path")
+            plan.validations.append(_("resolved explicit local model path"))
             self._write_manifest(plan)
             return plan
 
@@ -136,7 +138,7 @@ class TranscriberModelResolver:
             return self._resolve_hf_snapshot(effective_model_name, materialize=materialize, stage=stage)
         if self.backend == "faster_whisper":
             return self._resolve_faster_whisper_model(effective_model_name, materialize=materialize, stage=stage)
-        raise ValueError(f"Unsupported transcriber backend for model resolution: {self.backend!r}")
+        raise ValueError(_("Unsupported transcriber backend for model resolution: {!r}").format(self.backend))
 
     def _resolve_hf_snapshot(self, model_name: str, *, materialize: bool, stage: StageProgress | None = None) -> TranscriberResolutionPlan:
         provider_cache_root = self.model_store_root / "providers" / "huggingface" / "hub"
@@ -152,7 +154,7 @@ class TranscriberModelResolver:
             local_files_only=self.local_files_only,
             network_required=not self.local_files_only,
             network_allowed=not self.local_files_only,
-            network_reason=(None if self.local_files_only else "resolve or download Hugging Face snapshot"),
+            network_reason=(None if self.local_files_only else _("resolve or download Hugging Face snapshot")),
             provider_cache_root=provider_cache_root,
             hf_download=self.hf_download_config.summary(),
         )
@@ -161,7 +163,7 @@ class TranscriberModelResolver:
         if existing_dir is not None and existing_dir.exists():
             plan.resolved_model_dir = existing_dir
             plan.network_required = False
-            plan.validations.append("reused resolved model snapshot already present in py-roller model store")
+            plan.validations.append(_("reused resolved model snapshot already present in py-roller model store"))
             self._write_manifest(plan)
             return plan
 
@@ -174,7 +176,7 @@ class TranscriberModelResolver:
                         repo_id=model_name,
                         cache_dir=provider_cache_root,
                         local_files_only=self.local_files_only,
-                        log_label=f"transcriber model {model_name}",
+                        log_label=_("transcriber model {}").format(model_name),
                         stage=stage,
                         hf_download_config=self.hf_download_config,
                         **self.hf_download_config.snapshot_download_kwargs(),
@@ -182,16 +184,16 @@ class TranscriberModelResolver:
                 ).resolve()
             except Exception as exc:
                 guidance = (
-                    f"Unable to resolve transcriber model {model_name!r} into the local py-roller model store at {provider_cache_root}. "
-                    f"If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. "
-                    f"Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {exc}"
+                    _("Unable to resolve transcriber model {!r} into the local py-roller model store at {}. ").format(model_name, provider_cache_root)
+                    + _("If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. ")
+                    + _("Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {}").format(exc)
                 )
                 raise RuntimeError(guidance) from exc
             plan.resolved_model_dir = snapshot_dir
             plan.network_required = False
-            plan.validations.append("resolved Hugging Face snapshot into local py-roller model store")
+            plan.validations.append(_("resolved Hugging Face snapshot into local py-roller model store"))
         else:
-            plan.validations.append("would resolve Hugging Face snapshot on demand")
+            plan.validations.append(_("would resolve Hugging Face snapshot on demand"))
         self._write_manifest(plan)
         return plan
 
@@ -209,7 +211,7 @@ class TranscriberModelResolver:
             local_files_only=self.local_files_only,
             network_required=not self.local_files_only,
             network_allowed=not self.local_files_only,
-            network_reason=(None if self.local_files_only else "resolve or download faster-whisper CTranslate2 snapshot"),
+            network_reason=(None if self.local_files_only else _("resolve or download faster-whisper CTranslate2 snapshot")),
             provider_cache_root=provider_cache_root,
             download_root=provider_cache_root,
             hf_download=self.hf_download_config.summary(),
@@ -220,7 +222,7 @@ class TranscriberModelResolver:
         if existing_dir is not None and existing_dir.exists():
             plan.resolved_model_dir = existing_dir
             plan.network_required = False
-            plan.validations.append("reused resolved faster-whisper snapshot already present in py-roller model store")
+            plan.validations.append(_("reused resolved faster-whisper snapshot already present in py-roller model store"))
             self._write_manifest(plan)
             return plan
 
@@ -233,7 +235,7 @@ class TranscriberModelResolver:
                         repo_id=repo_id,
                         cache_dir=provider_cache_root,
                         local_files_only=self.local_files_only,
-                        log_label=f"faster-whisper ASR model {repo_id}",
+                        log_label=_("faster-whisper ASR model {}").format(repo_id),
                         stage=stage,
                         hf_download_config=self.hf_download_config,
                         **self.hf_download_config.snapshot_download_kwargs(),
@@ -241,16 +243,16 @@ class TranscriberModelResolver:
                 ).resolve()
             except Exception as exc:
                 guidance = (
-                    f"Unable to resolve faster-whisper ASR model {repo_id!r} into the local py-roller model store at {provider_cache_root}. "
-                    f"If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. "
-                    f"Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {exc}"
+                    _("Unable to resolve faster-whisper ASR model {!r} into the local py-roller model store at {}. ").format(repo_id, provider_cache_root)
+                    + _("If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. ")
+                    + _("Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {}").format(exc)
                 )
                 raise RuntimeError(guidance) from exc
             plan.resolved_model_dir = snapshot_dir
             plan.network_required = False
-            plan.validations.append("resolved faster-whisper snapshot into local py-roller model store")
+            plan.validations.append(_("resolved faster-whisper snapshot into local py-roller model store"))
         else:
-            plan.validations.append("would resolve faster-whisper snapshot on demand")
+            plan.validations.append(_("would resolve faster-whisper snapshot on demand"))
         self._write_manifest(plan)
         return plan
 

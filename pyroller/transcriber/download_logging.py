@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 import threading
 import time
 from pathlib import Path
@@ -75,7 +77,7 @@ def _repo_file_stats_from_hub(repo_id: str, *, local_files_only: bool, kwargs: d
             "file_count": file_count or None,
         }
     except Exception as exc:
-        logger.debug("Unable to prefetch Hugging Face file sizes for %s: %s", repo_id, exc)
+        logger.debug(_("Unable to prefetch Hugging Face file sizes for %s: %s"), repo_id, exc)
         return {"bytes_total": None, "largest_file": None, "largest_file_size": None, "file_count": None}
 
 
@@ -116,7 +118,7 @@ class _DownloadProgressWatcher:
                 file=self.largest_file,
                 file_count=self.file_count,
                 bytes_total=self.bytes_total,
-                message=f"Downloading model cache for {self.repo_id}",
+                message=_("Downloading model cache for {}").format(self.repo_id),
                 hf_download=self.summary,
             )
         self._thread = threading.Thread(target=self._run, name="pyroller-hf-download-progress", daemon=True)
@@ -143,7 +145,7 @@ class _DownloadProgressWatcher:
             bytes_total=self.bytes_total,
             progress=(current / self.bytes_total if self.bytes_total else None),
             cached=exc is None and self.bytes_total is not None and current >= self.bytes_total,
-            message=(f"Model cache download failed for {self.repo_id}" if exc is not None else f"Model cache ready for {self.repo_id}"),
+            message=(_("Model cache download failed for {}").format(self.repo_id) if exc is not None else _("Model cache ready for {}").format(self.repo_id)),
             hf_download=self.summary,
         )
 
@@ -165,11 +167,11 @@ class _DownloadProgressWatcher:
         self._last_time = now
         total = self.bytes_total
         percent = current / total if total else None
-        message = f"Downloading model cache: {_format_bytes(current)}"
+        message = _("Downloading model cache: {}").format(_format_bytes(current))
         if total:
-            message += f" / {_format_bytes(total)}"
+            message += _(" / {}").format(_format_bytes(total))
         if speed is not None:
-            message += f" at {_format_bytes(int(speed))}/s"
+            message += _(" at {}/s").format(_format_bytes(int(speed)))
         self.stage.event(
             "download_progress",
             stage="model_download",
@@ -201,11 +203,11 @@ def snapshot_download_with_logging(
     cache_dir = str(Path(cache_dir))
     summary = config.summary()
 
-    logger.info("Preparing model download: %s", log_label)
-    logger.info("Model source repo: %s", repo_id)
-    logger.info("Model cache destination: %s", cache_dir)
+    logger.info(_("Preparing model download: %s"), log_label)
+    logger.info(_("Model source repo: %s"), repo_id)
+    logger.info(_("Model cache destination: %s"), cache_dir)
     logger.info(
-        "HF download options: xet=%s proxy=%s etag_timeout=%s download_timeout=%s max_workers=%s",
+        _("HF download options: xet=%s proxy=%s etag_timeout=%s download_timeout=%s max_workers=%s"),
         summary["xet"],
         summary["proxy"],
         summary["etag_timeout"],
@@ -213,22 +215,22 @@ def snapshot_download_with_logging(
         summary["max_workers"],
     )
     if stage is not None:
-        stage.update(0, message=f"model source: {repo_id}")
+        stage.update(0, message=_("model source: {}").format(repo_id))
     if local_files_only:
-        logger.info("Local-files-only mode is enabled; py-roller will only use existing local cache for %s", log_label)
+        logger.info(_("Local-files-only mode is enabled; py-roller will only use existing local cache for %s"), log_label)
         if stage is not None:
-            stage.update(0, message="using local cache only")
+            stage.update(0, message=_("using local cache only"))
     else:
-        logger.info("Downloading model into local cache if missing: %s", log_label)
+        logger.info(_("Downloading model into local cache if missing: %s"), log_label)
         if stage is not None:
-            stage.update(0, message=f"checking/downloading model cache (HF XET={summary['xet']})")
+            stage.update(0, message=_("checking/downloading model cache (HF XET={})").format(summary['xet']))
 
     with hf_download_environment(config, local_files_only=local_files_only):
         try:
             from huggingface_hub import snapshot_download  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio-core]"
+                _("huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio-core]")
             ) from exc
 
         file_stats = _repo_file_stats_from_hub(repo_id, local_files_only=local_files_only, kwargs=kwargs)
@@ -251,8 +253,8 @@ def snapshot_download_with_logging(
                 )
         except Exception as exc:
             hints = huggingface_download_error_hints(exc)
-            hint_text = f" Suggested fix: {'; '.join(hints)}." if hints else ""
-            raise RuntimeError(f"Hugging Face model download failed for {repo_id!r}.{hint_text}") from exc
+            hint_text = _(" Suggested fix: {}.").format("; ".join(hints)) if hints else ""
+            raise RuntimeError(_("Hugging Face model download failed for {!r}.{}").format(repo_id, hint_text)) from exc
     if stage is not None:
-        stage.update(0, message="model cache ready")
+        stage.update(0, message=_("model cache ready"))
     return resolved

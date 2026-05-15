@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pyroller.i18n import _
+
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -183,7 +185,7 @@ class TranscriptionResult:
         data = read_json(path)
         artifact_type = data.get("artifact_type")
         if artifact_type != cls.artifact_type:
-            raise ValueError(f"Expected artifact_type={cls.artifact_type!r}, got {artifact_type!r} from {path}")
+            raise ValueError(_("Expected artifact_type={!r}, got {!r} from {}").format(cls.artifact_type, artifact_type, path))
         return cls.from_dict(data["payload"])
 
 
@@ -224,7 +226,7 @@ class ParsedLyrics:
         data = read_json(path)
         artifact_type = data.get("artifact_type")
         if artifact_type != cls.artifact_type:
-            raise ValueError(f"Expected artifact_type={cls.artifact_type!r}, got {artifact_type!r} from {path}")
+            raise ValueError(_("Expected artifact_type={!r}, got {!r} from {}").format(cls.artifact_type, artifact_type, path))
         return cls.from_dict(data["payload"])
 
 
@@ -304,7 +306,7 @@ class AlignmentResult:
         data = read_json(path)
         artifact_type = data.get("artifact_type")
         if artifact_type != cls.artifact_type:
-            raise ValueError(f"Expected artifact_type={cls.artifact_type!r}, got {artifact_type!r} from {path}")
+            raise ValueError(_("Expected artifact_type={!r}, got {!r} from {}").format(cls.artifact_type, artifact_type, path))
         return cls.from_dict(data["payload"])
 
 

@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from pyroller.i18n import _
 import yaml
 
 _SHARED_ALLOWED_KEYS = {
@@ -70,13 +71,13 @@ def preparse_config_path(argv: list[str]) -> Path | None:
 
 def load_cli_config(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists() or not path.is_file():
-        raise ConfigError(f"Config path must be an existing YAML file: {path}")
+        raise ConfigError(_("Config path must be an existing YAML file: {}").format(path))
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle)
     if data is None:
         return {"shared": {}, "run": {}, "batch": {}}
     if not isinstance(data, dict):
-        raise ConfigError("Config YAML must be a mapping/object.")
+        raise ConfigError(_("Config YAML must be a mapping/object."))
     sections = _normalize_sections(data)
     _validate_section_keys(sections)
     return sections
@@ -110,7 +111,7 @@ def _normalize_sections(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if raw is None:
                 raw = {}
             if not isinstance(raw, dict):
-                raise ConfigError(f"Config section '{section}' must be a mapping/object.")
+                raise ConfigError(_("Config section '{}' must be a mapping/object.").format(section))
             sections[section] = dict(raw)
         if sections["run"]:
             # The "run" section has no keys beyond shared; merge it into shared
@@ -118,8 +119,8 @@ def _normalize_sections(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             sections["shared"].update(sections.pop("run"))
         if other_keys:
             raise ConfigError(
-                "Top-level config keys must be under 'shared', 'run', or 'batch' when sectioned config is used. "
-                f"Unexpected keys: {', '.join(sorted(other_keys))}"
+                _("Top-level config keys must be under 'shared', 'run', or 'batch' when sectioned config is used. "
+                  "Unexpected keys: {}").format(', '.join(sorted(other_keys)))
             )
         return sections
     sections["shared"] = dict(data)
@@ -130,24 +131,18 @@ def _validate_section_keys(sections: dict[str, dict[str, Any]]) -> None:
     shared_unknown = sorted(set(sections.get("shared", {})) - _SHARED_ALLOWED_KEYS)
     if shared_unknown:
         raise ConfigError(
-            "Unsupported config keys under 'shared': "
-            + ", ".join(shared_unknown)
-            + ". Only default option overrides are allowed."
+            _("Unsupported config keys under 'shared': {}. Only default option overrides are allowed.").format(", ".join(shared_unknown))
         )
     run_unknown = sorted(set(sections.get("run", {})) - _RUN_ALLOWED_KEYS)
     run_unknown = sorted(set(sections.get("run", {})) - _RUN_ALLOWED_KEYS - _SHARED_ALLOWED_KEYS)
     if run_unknown:
         raise ConfigError(
-            "Unsupported config keys under 'run': "
-            + ", ".join(run_unknown)
-            + ". Run-specific config supports all shared keys."
+            _("Unsupported config keys under 'run': {}. Run-specific config supports all shared keys.").format(", ".join(run_unknown))
         )
     batch_unknown = sorted(set(sections.get("batch", {})) - _BATCH_ALLOWED_KEYS)
     if batch_unknown:
         raise ConfigError(
-            "Unsupported config keys under 'batch': "
-            + ", ".join(batch_unknown)
-            + ". Only batch default option overrides are allowed."
+            _("Unsupported config keys under 'batch': {}. Only batch default option overrides are allowed.").format(", ".join(batch_unknown))
         )
 
 

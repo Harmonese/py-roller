@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from pyroller.cli.config import apply_cli_config_defaults, load_cli_config, preparse_config_path
+from pyroller.i18n import _
 
 def _default_intermediate_dir() -> Path:
     return Path(tempfile.gettempdir()) / "py-roller-artifacts"
@@ -20,104 +21,104 @@ def _positive_timeout_seconds_arg(value: str) -> int:
     try:
         seconds = float(value)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError("must be a number of seconds") from exc
+        raise argparse.ArgumentTypeError(_("must be a number of seconds")) from exc
     if not math.isfinite(seconds) or seconds <= 0:
-        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+        raise argparse.ArgumentTypeError(_("must be a finite number greater than 0"))
     return max(1, int(math.ceil(seconds)))
 
 def _build_subparser_description(*, batch_mode: bool) -> str:
-    io_line = "All inputs/outputs are directories unless --manifest is used." if batch_mode else "All inputs/outputs are file paths."
+    io_line = _("All inputs/outputs are directories unless --manifest is used.") if batch_mode else _("All inputs/outputs are file paths.")
     detail = (
-        "Run the same contiguous stage chain across multiple tasks, either by stem-matching directories or by loading a YAML manifest."
+        _("Run the same contiguous stage chain across multiple tasks, either by stem-matching directories or by loading a YAML manifest.")
         if batch_mode
-        else "Run one contiguous pipeline stage chain. Inputs must match the first selected stage, and explicit artifacts are only allowed at legal chain starts."
+        else _("Run one contiguous pipeline stage chain. Inputs must match the first selected stage, and explicit artifacts are only allowed at legal chain starts.")
     )
-    language_hint = "For best transcription/parser defaults, pass --language zh or --language en when the song language is known."
-    return f"{io_line}\n\n{detail}\n\n{language_hint}"
+    language_hint = _("For best transcription/parser defaults, pass --language zh or --language en when the song language is known.")
+    return _("{}\n\n{}\n\n{}").format(io_line, detail, language_hint)
 
 def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode: bool) -> None:
-    stages_group = parser.add_argument_group("stages")
+    stages_group = parser.add_argument_group(_("stages"))
     stages_group.add_argument(
         "--stages",
         required=True,
-        help=(
+        help=_(
             "Comma-separated contiguous stage chain in canonical order s,f,t,p,a,w "
             "(splitter, filter, transcriber, parser, aligner, writer). "
             "Examples: s,f,t,p,a,w ; t,p,a,w ; a,w ; w. Do not skip intermediate stages."
         ),
     )
 
-    inputs = parser.add_argument_group("inputs")
-    inputs.add_argument("--audio", type=Path, default=None, help=("Input audio directory" if batch_mode else "Input audio file path"))
-    inputs.add_argument("--lyrics", type=Path, default=None, help=("Input plain-text lyrics directory" if batch_mode else "Input plain-text lyrics file path"))
-    inputs.add_argument("--timed-units", type=Path, default=None, help=("Input timed_units artifact directory" if batch_mode else "Input timed_units artifact JSON path"))
-    inputs.add_argument("--parsed-lyrics", type=Path, default=None, help=("Input parsed_lyrics artifact directory" if batch_mode else "Input parsed_lyrics artifact JSON path"))
-    inputs.add_argument("--alignment-result", type=Path, default=None, help=("Input alignment_result artifact directory" if batch_mode else "Input alignment_result artifact JSON path"))
+    inputs = parser.add_argument_group(_("inputs"))
+    inputs.add_argument("--audio", type=Path, default=None, help=_("Input audio directory") if batch_mode else _("Input audio file path"))
+    inputs.add_argument("--lyrics", type=Path, default=None, help=_("Input plain-text lyrics directory") if batch_mode else _("Input plain-text lyrics file path"))
+    inputs.add_argument("--timed-units", type=Path, default=None, help=_("Input timed_units artifact directory") if batch_mode else _("Input timed_units artifact JSON path"))
+    inputs.add_argument("--parsed-lyrics", type=Path, default=None, help=_("Input parsed_lyrics artifact directory") if batch_mode else _("Input parsed_lyrics artifact JSON path"))
+    inputs.add_argument("--alignment-result", type=Path, default=None, help=_("Input alignment_result artifact directory") if batch_mode else _("Input alignment_result artifact JSON path"))
 
-    outputs = parser.add_argument_group("outputs")
-    outputs.add_argument("--output-vocal-audio", type=Path, default=None, help=("Output directory for final vocal audio artifacts" if batch_mode else "Output path for final vocal audio artifact"))
-    outputs.add_argument("--output-filtered-audio", type=Path, default=None, help=("Output directory for final filtered audio artifacts" if batch_mode else "Output path for final filtered audio artifact"))
-    outputs.add_argument("--output-timed-units", type=Path, default=None, help=("Output directory for final timed_units artifacts" if batch_mode else "Output path for final timed_units artifact"))
-    outputs.add_argument("--output-parsed-lyrics", type=Path, default=None, help=("Output directory for final parsed_lyrics artifacts" if batch_mode else "Output path for final parsed_lyrics artifact"))
-    outputs.add_argument("--output-alignment-result", type=Path, default=None, help=("Output directory for final alignment_result artifacts" if batch_mode else "Output path for final alignment_result artifact"))
-    outputs.add_argument("--output-roller", type=Path, default=None, help=("Output directory for LRC/ASS writer results. Required when stages include w." if batch_mode else "Output path for the LRC/ASS writer result. Required when stages include w."))
+    outputs = parser.add_argument_group(_("outputs"))
+    outputs.add_argument("--output-vocal-audio", type=Path, default=None, help=_("Output directory for final vocal audio artifacts") if batch_mode else _("Output path for final vocal audio artifact"))
+    outputs.add_argument("--output-filtered-audio", type=Path, default=None, help=_("Output directory for final filtered audio artifacts") if batch_mode else _("Output path for final filtered audio artifact"))
+    outputs.add_argument("--output-timed-units", type=Path, default=None, help=_("Output directory for final timed_units artifacts") if batch_mode else _("Output path for final timed_units artifact"))
+    outputs.add_argument("--output-parsed-lyrics", type=Path, default=None, help=_("Output directory for final parsed_lyrics artifacts") if batch_mode else _("Output path for final parsed_lyrics artifact"))
+    outputs.add_argument("--output-alignment-result", type=Path, default=None, help=_("Output directory for final alignment_result artifacts") if batch_mode else _("Output path for final alignment_result artifact"))
+    outputs.add_argument("--output-roller", type=Path, default=None, help=_("Output directory for LRC/ASS writer results. Required when stages include w.") if batch_mode else _("Output path for the LRC/ASS writer result. Required when stages include w."))
 
-    language = parser.add_argument_group("language and defaults")
+    language = parser.add_argument_group(_("language and defaults"))
     language.add_argument(
         "--language",
         choices=["zh", "en", "mul"],
         default="mul",
-        help="Pipeline language. Use zh or en when known; mul is the multilingual fallback. Default: mul",
+        help=_("Pipeline language. Use zh or en when known; mul is the multilingual fallback. Default: mul"),
     )
 
-    splitter = parser.add_argument_group("splitter options (stage s)")
-    splitter.add_argument("--splitter-backend", default=None, help="Splitter backend override. Omit to use the language/backend default; use demucs for Demucs separation.")
-    splitter.add_argument("--splitter-demucs-model", default=None, help="Demucs model name when --splitter-backend demucs, e.g. htdemucs.")
-    splitter.add_argument("--splitter-demucs-device", default=None, help="Device passed to Demucs, e.g. cpu or cuda.")
-    splitter.add_argument("--splitter-demucs-jobs", type=int, default=None, help="Demucs parallel jobs for separation.")
-    splitter.add_argument("--splitter-demucs-overlap", type=float, default=None, help="Demucs chunk overlap ratio.")
-    splitter.add_argument("--splitter-demucs-segment", type=float, default=None, help="Demucs chunk size in seconds.")
+    splitter = parser.add_argument_group(_("splitter options (stage s)"))
+    splitter.add_argument("--splitter-backend", default=None, help=_("Splitter backend override. Omit to use the language/backend default; use demucs for Demucs separation."))
+    splitter.add_argument("--splitter-demucs-model", default=None, help=_("Demucs model name when --splitter-backend demucs, e.g. htdemucs."))
+    splitter.add_argument("--splitter-demucs-device", default=None, help=_("Device passed to Demucs, e.g. cpu or cuda."))
+    splitter.add_argument("--splitter-demucs-jobs", type=int, default=None, help=_("Demucs parallel jobs for separation."))
+    splitter.add_argument("--splitter-demucs-overlap", type=float, default=None, help=_("Demucs chunk overlap ratio."))
+    splitter.add_argument("--splitter-demucs-segment", type=float, default=None, help=_("Demucs chunk size in seconds."))
 
-    filter_options = parser.add_argument_group("filter options (stage f)")
+    filter_options = parser.add_argument_group(_("filter options (stage f)"))
     filter_options.add_argument(
         "--filter-chain",
         default=None,
-        help="Comma-separated filter steps for stage f, e.g. noise_gate,dereverb. YAML config may use a string or list.",
+        help=_("Comma-separated filter steps for stage f, e.g. noise_gate,dereverb. YAML config may use a string or list."),
     )
 
-    transcriber = parser.add_argument_group("transcriber options (stage t)")
-    transcriber.add_argument("--transcriber-backend", default=None, help="Transcriber backend override. Defaults are language-aware; faster_whisper is the default for zh/en/mul.")
-    transcriber.add_argument("--transcriber-device", default=None, help="Inference device passed to supported transcriber backends, e.g. cpu or cuda.")
-    transcriber.add_argument("--transcriber-model-name", default=None, help="Model alias, Hugging Face repo id, or explicit local model path. faster-whisper aliases include large-v2, large-v3, and turbo.")
-    transcriber.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="Local transcriber model store. Missing remote models are materialized here unless --transcriber-local-files-only is set.")
-    transcriber.add_argument("--transcriber-local-files-only", action=argparse.BooleanOptionalAction, default=None, help="Offline mode: do not access remote model sources; use only local files/cache.")
-    transcriber.add_argument("--transcriber-compute-type", default=None, help="faster-whisper compute_type override, e.g. float16, int8, or int8_float16.")
-    transcriber.add_argument("--transcriber-batch-size", type=int, default=None, help="faster-whisper inference batch size override.")
-    transcriber.add_argument("--transcriber-vad-filter", action=argparse.BooleanOptionalAction, default=None, help="Enable faster-whisper VAD filtering to skip silence. Default: true")
+    transcriber = parser.add_argument_group(_("transcriber options (stage t)"))
+    transcriber.add_argument("--transcriber-backend", default=None, help=_("Transcriber backend override. Defaults are language-aware; faster_whisper is the default for zh/en/mul."))
+    transcriber.add_argument("--transcriber-device", default=None, help=_("Inference device passed to supported transcriber backends, e.g. cpu or cuda."))
+    transcriber.add_argument("--transcriber-model-name", default=None, help=_("Model alias, Hugging Face repo id, or explicit local model path. faster-whisper aliases include large-v2, large-v3, and turbo."))
+    transcriber.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help=_("Local transcriber model store. Missing remote models are materialized here unless --transcriber-local-files-only is set."))
+    transcriber.add_argument("--transcriber-local-files-only", action=argparse.BooleanOptionalAction, default=None, help=_("Offline mode: do not access remote model sources; use only local files/cache."))
+    transcriber.add_argument("--transcriber-compute-type", default=None, help=_("faster-whisper compute_type override, e.g. float16, int8, or int8_float16."))
+    transcriber.add_argument("--transcriber-batch-size", type=int, default=None, help=_("faster-whisper inference batch size override."))
+    transcriber.add_argument("--transcriber-vad-filter", action=argparse.BooleanOptionalAction, default=None, help=_("Enable faster-whisper VAD filtering to skip silence. Default: true"))
 
-    hf_download = parser.add_argument_group("Hugging Face model download options")
-    hf_download.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="XET/CAS download mode for Hugging Face models. Use off when XET hangs or fails on your network. Default: auto")
-    hf_download.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890.")
-    hf_download.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face metadata/etag timeout in seconds. Raise this on slow or high-latency networks.")
-    hf_download.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face file download timeout in seconds. Raise this when large model files time out.")
-    hf_download.add_argument("--transcriber-hf-max-workers", type=int, default=None, help="Maximum parallel snapshot download workers. Lower values such as 1 or 2 can help fragile proxies.")
+    hf_download = parser.add_argument_group(_("Hugging Face model download options"))
+    hf_download.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help=_("XET/CAS download mode for Hugging Face models. Use off when XET hangs or fails on your network. Default: auto"))
+    hf_download.add_argument("--transcriber-hf-proxy", default=None, help=_("Proxy URL for Hugging Face model downloads, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890."))
+    hf_download.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help=_("Hugging Face metadata/etag timeout in seconds. Raise this on slow or high-latency networks."))
+    hf_download.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help=_("Hugging Face file download timeout in seconds. Raise this when large model files time out."))
+    hf_download.add_argument("--transcriber-hf-max-workers", type=int, default=None, help=_("Maximum parallel snapshot download workers. Lower values such as 1 or 2 can help fragile proxies."))
 
-    parser_options = parser.add_argument_group("parser options (stage p)")
+    parser_options = parser.add_argument_group(_("parser options (stage p)"))
     parser_options.add_argument(
         "--parser-lyrics-encoding",
         default=None,
         choices=["auto", "utf-8", "utf-8-sig", "utf-16", "gbk", "gb18030", "shift-jis"],
-        help="Lyrics text encoding. Default: auto",
+        help=_("Lyrics text encoding. Default: auto"),
     )
 
-    aligner = parser.add_argument_group("aligner options (stage a)")
-    aligner.add_argument("--aligner-backend", default=None, help="Aligner backend override. Omit to use the default global_dp_v1 backend.")
-    aligner.add_argument("--aligner-min-gap", type=float, default=None, help="Minimum post-repair gap between aligned lyric lines, in seconds.")
+    aligner = parser.add_argument_group(_("aligner options (stage a)"))
+    aligner.add_argument("--aligner-backend", default=None, help=_("Aligner backend override. Omit to use the default global_dp_v1 backend."))
+    aligner.add_argument("--aligner-min-gap", type=float, default=None, help=_("Minimum post-repair gap between aligned lyric lines, in seconds."))
     aligner.add_argument(
         "--aligner-repetition",
         choices=["none", "few", "full"],
         default=None,
-        help=(
+        help=_(
             "Repetition handling mode. "
             "none=standard global DP; "
             "few=repair sparse repeated/omitted regions between trusted anchors; "
@@ -126,37 +127,37 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
         ),
     )
 
-    writer = parser.add_argument_group("writer options (stage w)")
-    writer.add_argument("--writer-backend", default=None, help="Writer backend override. Common values: lrc_ms, lrc_cs, lrc_compressed, ass_karaoke.")
-    writer.add_argument("--writer-spacing", choices=["keep", "drop"], default=None, help="Whether to keep structural blank lyric lines in writer output. Default: keep")
-    writer.add_argument("--writer-by-tag", default=None, help="Value for writer metadata BY tag in LRC/ASS outputs.")
-    writer.add_argument("--writer-ass-karaoke-tag-type", choices=["k", "K", "kf", "ko"], default=None, help="ASS karaoke timing tag type when --writer-backend ass_karaoke. Default is writer-specific.")
+    writer = parser.add_argument_group(_("writer options (stage w)"))
+    writer.add_argument("--writer-backend", default=None, help=_("Writer backend override. Common values: lrc_ms, lrc_cs, lrc_compressed, ass_karaoke."))
+    writer.add_argument("--writer-spacing", choices=["keep", "drop"], default=None, help=_("Whether to keep structural blank lyric lines in writer output. Default: keep"))
+    writer.add_argument("--writer-by-tag", default=None, help=_("Value for writer metadata BY tag in LRC/ASS outputs."))
+    writer.add_argument("--writer-ass-karaoke-tag-type", choices=["k", "K", "kf", "ko"], default=None, help=_("ASS karaoke timing tag type when --writer-backend ass_karaoke. Default is writer-specific."))
 
-    runtime = parser.add_argument_group("runtime control")
+    runtime = parser.add_argument_group(_("runtime control"))
     runtime.add_argument(
         "--config",
         type=Path,
         default=None,
-        help="Load YAML defaults. Priority: built-in defaults < config file < explicit CLI flags.",
+        help=_("Load YAML defaults. Priority: built-in defaults < config file < explicit CLI flags."),
     )
     runtime.add_argument(
         "--intermediate",
         type=Path,
         default=_default_intermediate_dir(),
-        help="Root directory for intermediate splitter/filter/log files. Use --cleanup never to keep these files after success.",
+        help=_("Root directory for intermediate splitter/filter/log files. Use --cleanup never to keep these files after success."),
     )
     runtime.add_argument(
         "--cleanup",
         choices=["on-success", "never"],
         default="on-success",
-        help="Intermediate cleanup policy: on-success removes successful task directories; never keeps them. Default: on-success",
+        help=_("Intermediate cleanup policy: on-success removes successful task directories; never keeps them. Default: on-success"),
     )
-    runtime.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Console and file log verbosity. Use DEBUG for full tracebacks.")
+    runtime.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help=_("Console and file log verbosity. Use DEBUG for full tracebacks."))
     runtime.add_argument(
         "--progress-format",
         choices=["human", "jsonl", "both"],
         default="human",
-        help=(
+        help=_(
             "Progress output format. human keeps terminal-oriented progress; "
             "jsonl emits machine-readable PYROLLER_EVENT JSON lines for GUI frontends; "
             "both emits both. Default: human"
@@ -164,29 +165,29 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     )
 
     if batch_mode:
-        batch = parser.add_argument_group("batch-only")
-        batch.add_argument("--continue-on-error", action="store_true", help="Keep processing remaining tasks after failures.")
-        batch.add_argument("--skip-existing", action="store_true", help="Skip tasks whose declared final outputs already exist.")
-        batch.add_argument("--pair-by", choices=["stem"], default="stem", help="Directory pairing strategy. Current supported value: stem.")
-        batch.add_argument("--jobs", type=int, default=1, help="Maximum number of parallel batch workers. For audio pipelines, start with 1. Default: 1")
-        batch.add_argument("--audio-glob", default="*.mp3", help="Non-recursive glob for candidate audio files in batch mode. Default: *.mp3")
-        batch.add_argument("--lyrics-glob", default="*.txt", help="Non-recursive glob for candidate lyric files in batch mode. Default: *.txt")
-        batch.add_argument("--timed-units-glob", default="*.json", help="Non-recursive glob for candidate timed_units artifacts in batch mode. Default: *.json")
-        batch.add_argument("--parsed-lyrics-glob", default="*.json", help="Non-recursive glob for candidate parsed_lyrics artifacts in batch mode. Default: *.json")
-        batch.add_argument("--alignment-result-glob", default="*.json", help="Non-recursive glob for candidate alignment_result artifacts in batch mode. Default: *.json")
+        batch = parser.add_argument_group(_("batch-only"))
+        batch.add_argument("--continue-on-error", action="store_true", help=_("Keep processing remaining tasks after failures."))
+        batch.add_argument("--skip-existing", action="store_true", help=_("Skip tasks whose declared final outputs already exist."))
+        batch.add_argument("--pair-by", choices=["stem"], default="stem", help=_("Directory pairing strategy. Current supported value: stem."))
+        batch.add_argument("--jobs", type=int, default=1, help=_("Maximum number of parallel batch workers. For audio pipelines, start with 1. Default: 1"))
+        batch.add_argument("--audio-glob", default="*.mp3", help=_("Non-recursive glob for candidate audio files in batch mode. Default: *.mp3"))
+        batch.add_argument("--lyrics-glob", default="*.txt", help=_("Non-recursive glob for candidate lyric files in batch mode. Default: *.txt"))
+        batch.add_argument("--timed-units-glob", default="*.json", help=_("Non-recursive glob for candidate timed_units artifacts in batch mode. Default: *.json"))
+        batch.add_argument("--parsed-lyrics-glob", default="*.json", help=_("Non-recursive glob for candidate parsed_lyrics artifacts in batch mode. Default: *.json"))
+        batch.add_argument("--alignment-result-glob", default="*.json", help=_("Non-recursive glob for candidate alignment_result artifacts in batch mode. Default: *.json"))
         batch.add_argument(
             "--manifest",
             type=Path,
             default=None,
-            help="YAML manifest with per-task input/output file paths. When used, do not also pass batch input/output directories.",
+            help=_("YAML manifest with per-task input/output file paths. When used, do not also pass batch input/output directories."),
         )
 
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
     formatter = argparse.RawTextHelpFormatter
     parser = argparse.ArgumentParser(
         prog="py-roller",
-        description="Local lyric-audio alignment pipeline for LRC/ASS generation.",
-        epilog=(
+        description=_("Local lyric-audio alignment pipeline for LRC/ASS generation."),
+        epilog=_(
             "Common commands:\n"
             "  py-roller install\n"
             "  py-roller doctor\n"
@@ -200,9 +201,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
 
     run = subparsers.add_parser(
         "run",
-        help="Run one contiguous pipeline stage chain for one song/task.",
+        help=_("Run one contiguous pipeline stage chain for one song/task."),
         description=_build_subparser_description(batch_mode=False),
-        epilog=(
+        epilog=_(
             "Examples:\n"
             "  py-roller run --stages t,p,a,w --audio vocals.wav --lyrics song.txt --language zh --output-roller song.lrc\n"
             "  py-roller run --stages t,p,a,w --audio vocals.wav --lyrics song.txt --transcriber-hf-xet off --output-roller song.lrc"
@@ -213,9 +214,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
 
     batch = subparsers.add_parser(
         "batch",
-        help="Run the same contiguous stage chain across many songs/tasks.",
+        help=_("Run the same contiguous stage chain across many songs/tasks."),
         description=_build_subparser_description(batch_mode=True),
-        epilog=(
+        epilog=_(
             "Examples:\n"
             "  py-roller batch --stages t,p,a,w --audio audio_dir --lyrics lyrics_dir --language zh --output-roller out_dir\n"
             "  py-roller batch --stages t,p,a,w --manifest jobs.yaml --language zh --jobs 1"
@@ -228,7 +229,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
     install_spec = _build_install_parser()
     install = subparsers.add_parser(
         "install",
-        help="Install/repair the official audio and transcriber runtime.",
+        help=_("Install/repair the official audio and transcriber runtime."),
         description=install_spec.description,
         formatter_class=formatter,
         parents=[install_spec],
@@ -237,8 +238,8 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
 
     doctor = subparsers.add_parser(
         "doctor",
-        help="Inspect the local audio, transcriber, and proxy environment.",
-        description=(
+        help=_("Inspect the local audio, transcriber, and proxy environment."),
+        description=_(
             "Check whether torch, torchaudio, faster-whisper, CTranslate2, transformers, "
             "demucs, librosa, and SOCKS proxy support import successfully in the current environment."
         ),
@@ -248,25 +249,25 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
         "--output-format",
         choices=["human", "json"],
         default="human",
-        help="Doctor report output format. human prints the terminal checklist; json prints a machine-readable report. Default: human",
+        help=_("Doctor report output format. human prints the terminal checklist; json prints a machine-readable report. Default: human"),
     )
 
     cache_model = subparsers.add_parser(
         "cache-model",
-        help="Pre-download a transcriber model into the local model store.",
-        description="Resolve and materialize a transcriber model into the local py-roller model store so later pipeline runs can use --transcriber-local-files-only.",
+        help=_("Pre-download a transcriber model into the local model store."),
+        description=_("Resolve and materialize a transcriber model into the local py-roller model store so later pipeline runs can use --transcriber-local-files-only."),
         formatter_class=formatter,
     )
-    cache_model.add_argument("--language", choices=["zh", "en", "mul"], default="mul", help="Pipeline language for backend/model resolution. Default: mul")
-    cache_model.add_argument("--transcriber-backend", default=None, help="Transcriber backend override. Defaults are language-aware.")
-    cache_model.add_argument("--transcriber-model-name", default=None, help="Model alias, Hugging Face repo id, or explicit local model path. faster-whisper aliases include large-v2, large-v3, and turbo.")
-    cache_model.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help="Local transcriber model store root.")
-    cache_model.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help="XET/CAS download mode. Use off when XET hangs. Default: auto")
-    cache_model.add_argument("--transcriber-hf-proxy", default=None, help="Proxy URL for Hugging Face model downloads.")
-    cache_model.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face metadata/etag timeout in seconds.")
-    cache_model.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help="Hugging Face file download timeout in seconds.")
-    cache_model.add_argument("--transcriber-hf-max-workers", type=int, default=None, help="Maximum parallel snapshot download workers.")
-    cache_model.add_argument("--progress-format", choices=["human", "jsonl", "both"], default="human", help="Progress output format. Default: human")
+    cache_model.add_argument("--language", choices=["zh", "en", "mul"], default="mul", help=_("Pipeline language for backend/model resolution. Default: mul"))
+    cache_model.add_argument("--transcriber-backend", default=None, help=_("Transcriber backend override. Defaults are language-aware."))
+    cache_model.add_argument("--transcriber-model-name", default=None, help=_("Model alias, Hugging Face repo id, or explicit local model path. faster-whisper aliases include large-v2, large-v3, and turbo."))
+    cache_model.add_argument("--transcriber-model-path", type=Path, default=_default_transcriber_model_path(), help=_("Local transcriber model store root."))
+    cache_model.add_argument("--transcriber-hf-xet", choices=["auto", "on", "off"], default=None, help=_("XET/CAS download mode. Use off when XET hangs. Default: auto"))
+    cache_model.add_argument("--transcriber-hf-proxy", default=None, help=_("Proxy URL for Hugging Face model downloads."))
+    cache_model.add_argument("--transcriber-hf-etag-timeout", type=_positive_timeout_seconds_arg, default=None, help=_("Hugging Face metadata/etag timeout in seconds."))
+    cache_model.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help=_("Hugging Face file download timeout in seconds."))
+    cache_model.add_argument("--transcriber-hf-max-workers", type=int, default=None, help=_("Maximum parallel snapshot download workers."))
+    cache_model.add_argument("--progress-format", choices=["human", "jsonl", "both"], default="human", help=_("Progress output format. Default: human"))
 
     return parser, run, batch
 
@@ -407,18 +408,18 @@ def _build_request(args: argparse.Namespace):
 def _print_run_summary(result, request) -> None:
     from pyroller.batch import batch_task_log_file
 
-    print("[OK] pipeline complete")
-    print(f"  executed stages        : {', '.join(result.executed_stages)}")
+    print(_("[OK] pipeline complete"))
+    print(_("  executed stages        : {}").format(', '.join(result.executed_stages)))
     if result.source_audio_artifact is not None:
-        print(f"  input audio            : {result.source_audio_artifact.path} ({result.source_audio_artifact.role})")
+        print(_("  input audio            : {} ({})").format(result.source_audio_artifact.path, result.source_audio_artifact.role))
     if result.current_audio_artifact is not None:
-        print(f"  current audio          : {result.current_audio_artifact.path} ({result.current_audio_artifact.role})")
+        print(_("  current audio          : {} ({})").format(result.current_audio_artifact.path, result.current_audio_artifact.role))
     if result.transcription is not None:
-        print(f"  timed units            : {len(result.transcription.units)}")
+        print(_("  timed units            : {}").format(len(result.transcription.units)))
     if result.parsed_lyrics is not None:
-        print(f"  parsed lyric lines     : {len(result.parsed_lyrics.lines)}")
+        print(_("  parsed lyric lines     : {}").format(len(result.parsed_lyrics.lines)))
     if result.alignment is not None:
-        print(f"  aligned lines          : {len(result.alignment.lines)}")
+        print(_("  aligned lines          : {}").format(len(result.alignment.lines)))
     for label, path in (
         ("output vocal audio", request.output_vocal_audio_path),
         ("output filtered audio", request.output_filtered_audio_path),
@@ -428,39 +429,39 @@ def _print_run_summary(result, request) -> None:
         ("output roller", result.write_result.output_path if result.write_result is not None else None),
     ):
         if path is not None:
-            print(f"  {label:<22}: {path}")
-    print(f"  cleanup policy         : {request.cleanup}")
+            print(_("  {label:<22}: {path}").format(label=label, path=path))
+    print(_("  cleanup policy         : {}").format(request.cleanup))
     if request.cleanup == "never":
-        print(f"  intermediate dir       : {request.intermediate_dir}")
-        print(f"  log file               : {batch_task_log_file(request.intermediate_dir)}")
+        print(_("  intermediate dir       : {}").format(request.intermediate_dir))
+        print(_("  log file               : {}").format(batch_task_log_file(request.intermediate_dir)))
     else:
-        print("  intermediate dir       : cleaned after success")
-        print("  log file               : cleaned after success")
+        print(_("  intermediate dir       : cleaned after success"))
+        print(_("  log file               : cleaned after success"))
 
 def _print_batch_summary(summary) -> None:
-    print("[OK] batch complete")
-    print(f"  total tasks            : {summary.total}")
-    print(f"  completed              : {summary.completed}")
-    print(f"  failed                 : {summary.failed}")
-    print(f"  skipped                : {summary.skipped}")
-    print(f"  aborted                : {summary.aborted}")
+    print(_("[OK] batch complete"))
+    print(_("  total tasks            : {}").format(summary.total))
+    print(_("  completed              : {}").format(summary.completed))
+    print(_("  failed                 : {}").format(summary.failed))
+    print(_("  skipped                : {}").format(summary.skipped))
+    print(_("  aborted                : {}").format(summary.aborted))
     if summary.failed:
-        print("  outcome                : finished with failures")
+        print(_("  outcome                : finished with failures"))
     elif summary.aborted:
-        print("  outcome                : stopped after failure")
+        print(_("  outcome                : stopped after failure"))
     elif summary.skipped and summary.completed == 0:
-        print("  outcome                : nothing new to do")
+        print(_("  outcome                : nothing new to do"))
     else:
-        print("  outcome                : success")
+        print(_("  outcome                : success"))
     for item in summary.results:
-        tag = {"ok": "OK", "skipped": "SKIP", "failed": "FAIL", "aborted": "ABORT"}.get(item.status, item.status.upper())
-        print(f"  [{tag:<5}] #{item.index:03d} {item.stem} :: {item.message}")
+        tag = {"ok": _("OK"), "skipped": _("SKIP"), "failed": _("FAIL"), "aborted": _("ABORT")}.get(item.status, item.status.upper())
+        print(_("  [{tag:<5}] #{index:03d} {stem} :: {msg}").format(tag=tag, index=item.index, stem=item.stem, msg=item.message))
         if item.outputs:
-            print("           outputs       : " + ", ".join(str(path) for path in item.outputs))
+            print(_("           outputs       : {}").format(", ".join(str(path) for path in item.outputs)))
         if item.log_file is not None:
-            print(f"           log           : {item.log_file}")
+            print(_("           log           : {}").format(item.log_file))
         elif item.status == "ok" and item.cleaned:
-            print("           log           : cleaned after success")
+            print(_("           log           : cleaned after success"))
 
 def _prepare_single_run_request(request):
     from pyroller.utils.ids import make_id
@@ -494,7 +495,7 @@ def _validate_batch_directory_outputs(request) -> None:
         ("--output-roller", request.output_roller_path),
     ):
         if path is not None and path.exists() and not path.is_dir():
-            raise ValueError(f"{label} must be a directory in batch mode: {path}")
+            raise ValueError(_("{} must be a directory in batch mode: {}").format(label, path))
 
 def _validate_manifest_batch_usage(request) -> None:
     for label, path in (
@@ -512,7 +513,7 @@ def _validate_manifest_batch_usage(request) -> None:
     ):
         if path is not None:
             raise ValueError(
-                f"{label} cannot be used together with --manifest. Put per-task input/output paths inside the YAML manifest instead."
+                _("{} cannot be used together with --manifest. Put per-task input/output paths inside the YAML manifest instead.").format(label)
             )
 
 def _execute_batch(args: argparse.Namespace, request) -> int:
@@ -521,11 +522,11 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
     from pyroller.pipeline import ComposablePipelineRunner
 
     if args.jobs < 1:
-        raise ValueError("--jobs must be at least 1.")
+        raise ValueError(_("--jobs must be at least 1."))
     configure_logging(level=request.log_level, log_file=None)
     if args.jobs > 2:
         logging.getLogger("pyroller.cli").warning(
-            "Batch parallelism jobs=%d may be memory-heavy for audio pipelines. Consider jobs<=2 for stable CPU/GPU usage.",
+            _("Batch parallelism jobs=%d may be memory-heavy for audio pipelines. Consider jobs<=2 for stable CPU/GPU usage."),
             args.jobs,
         )
 
@@ -550,7 +551,7 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
         ).build_tasks(request)
 
     if not tasks:
-        raise ValueError("Batch mode found no runnable tasks.")
+        raise ValueError(_("Batch mode found no runnable tasks."))
     summary = BatchRunner().run(
         tasks,
         continue_on_error=args.continue_on_error,
@@ -585,16 +586,16 @@ def _execute_cache_model(args: argparse.Namespace) -> int:
         local_files_only=False,
         hf_download_config=hf_config,
     )
-    stage = progress.stage("model_download", total=2, unit="phase")
-    stage.phase("resolving model")
+    stage = progress.stage("model_download", total=2, unit=_("phase"))
+    stage.phase(_("resolving model"))
     plan = resolver.resolve(materialize=True, stage=stage)
-    stage.phase("model cached")
-    stage.close("model download complete")
-    print(f"[OK] model cached: {plan.effective_model_name}")
-    print(f"  backend      : {plan.backend}")
-    print(f"  language     : {plan.language}")
-    print(f"  model dir    : {plan.resolved_model_dir}")
-    print(f"  store root   : {plan.model_store_root}")
+    stage.phase(_("model cached"))
+    stage.close(_("model download complete"))
+    print(_("[OK] model cached: {}").format(plan.effective_model_name))
+    print(_("  backend      : {}").format(plan.backend))
+    print(_("  language     : {}").format(plan.language))
+    print(_("  model dir    : {}").format(plan.resolved_model_dir))
+    print(_("  store root   : {}").format(plan.model_store_root))
     return 0
 
 
@@ -622,18 +623,18 @@ def main() -> None:
             return
         if args.command == "batch":
             raise SystemExit(_execute_batch(args, request))
-        raise ValueError(f"Unknown command: {args.command}")
+        raise ValueError(_("Unknown command: {}").format(args.command))
     except KeyboardInterrupt:
-        logging.getLogger("pyroller.cli").warning("Interrupted by user.")
-        print("[ERROR] interrupted by user", file=sys.stderr)
+        logging.getLogger("pyroller.cli").warning(_("Interrupted by user."))
+        print(_("[ERROR] interrupted by user"), file=sys.stderr)
         raise SystemExit(130)
     except Exception as exc:
         cli_logger = logging.getLogger("pyroller.cli")
         if cli_logger.isEnabledFor(logging.DEBUG):
-            cli_logger.exception("Pipeline command failed")
+            cli_logger.exception(_("Pipeline command failed"))
         else:
-            cli_logger.error("Pipeline command failed: %s", exc)
-        print(f"[ERROR] {exc}", file=sys.stderr)
+            cli_logger.error(_("Pipeline command failed: %s"), exc)
+        print(_("[ERROR] {}").format(exc), file=sys.stderr)
         raise SystemExit(1)
 
 if __name__ == "__main__":

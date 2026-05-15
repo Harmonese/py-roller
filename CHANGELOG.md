@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.5.10] - 2026-05-16
+
+### Added
+- Added Chinese (zh) i18n support: all CLI help text, pipeline output summaries, error messages, logger messages, doctor reports, install progress, and argparse built-in strings are now translated when the system locale is Chinese or `PYROLLER_LANG=zh` is set.
+- Added `pyroller/i18n.py` with locale auto-detection from `LANG`/`LC_ALL`/`LANGUAGE` and `PYROLLER_LANG` override.
+- Added `pyroller/resources/locales/zh.json` with 487 Chinese translation entries covering every user-facing string.
+
+### Changed
+- `pyroller/__init__.py` now exports `_()` for translation.
+- `pyproject.toml` includes `resources/locales/*.json` in package data.
+
 ## [0.5.9] - 2026-05-16
 
 ### Fixed

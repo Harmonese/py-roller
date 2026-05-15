@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+
+from pyroller.i18n import _
 from typing import Any
 
 from pyroller.aligner.base import Aligner
@@ -23,7 +25,7 @@ def build_aligner(backend_name: str | None, config: dict[str, Any]) -> Aligner:
         factory = _ALIGNER_FACTORIES[chosen_backend]
     except KeyError as exc:
         raise ValueError(
-            f"Unsupported aligner backend {chosen_backend!r}. Available backends: {', '.join(list_available_aligner_backends())}"
+            _("Unsupported aligner backend {!r}. Available backends: {}").format(chosen_backend, ", ".join(list_available_aligner_backends()))
         ) from exc
     init_config = {key: value for key, value in dict(config).items() if value is not None}
     init_config.pop("backend", None)

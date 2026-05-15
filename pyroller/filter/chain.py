@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from pathlib import Path
 from typing import Iterable
 
@@ -21,13 +23,13 @@ class FilterChain:
         total_phases = max(1, len(self.filters) + 1)
         stage = progress.stage("filter", total=total_phases, unit="phase") if progress is not None else None
         if not self.filters:
-            logger.info("Filter chain empty: forwarding %s unchanged", audio_artifact.path)
+            logger.info(_("Filter chain empty: forwarding %s unchanged"), audio_artifact.path)
             metadata = dict(audio_artifact.metadata)
             metadata["filter_chain"] = []
             metadata["source_artifact_id"] = audio_artifact.artifact_id
             if stage is not None:
-                stage.phase("no filter steps configured; forwarding audio unchanged")
-                stage.close("filter stage skipped")
+                stage.phase(_("no filter steps configured; forwarding audio unchanged"))
+                stage.close(_("filter stage skipped"))
             return AudioArtifact(
                 artifact_id=make_id("artifact"),
                 stage="filter",
@@ -44,14 +46,14 @@ class FilterChain:
         applied: list[str] = []
         self.output_dir.mkdir(parents=True, exist_ok=True)
         if stage is not None:
-            stage.phase("preparing filter chain")
+            stage.phase(_("preparing filter chain"))
         for audio_filter in self.filters:
             filter_name = getattr(audio_filter, "name", audio_filter.__class__.__name__)
-            logger.info("Applying filter step: %s", filter_name)
+            logger.info(_("Applying filter step: %s"), filter_name)
             current = audio_filter.process(current, self.output_dir)
             applied.append(filter_name)
             if stage is not None:
-                stage.phase(f"applied {filter_name}")
+                stage.phase(_("applied {}").format(filter_name))
 
         metadata = dict(current.metadata)
         metadata["filter_chain"] = applied
@@ -60,5 +62,5 @@ class FilterChain:
         current.metadata = metadata
         current.role = "filtered_vocal_audio"
         if stage is not None:
-            stage.close("filter stage complete")
+            stage.close(_("filter stage complete"))
         return current

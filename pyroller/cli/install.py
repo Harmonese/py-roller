@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from pyroller.i18n import _
 from pyroller.utils.json import json_default
 
 PYTHON = sys.executable
@@ -41,14 +42,14 @@ class InstallProfile:
 PROFILES: dict[str, InstallProfile] = {
     "cpu": InstallProfile(
         name="cpu",
-        label="CPU-only latest validated audio environment",
+        label=_("CPU-only latest validated audio environment"),
         index_url="https://download.pytorch.org/whl/cpu",
         constraint_resource="audio-cpu.txt",
         torch_packages=("torch==2.6.0", "torchaudio==2.6.0", "torchvision==0.21.0"),
     ),
     "cu124": InstallProfile(
         name="cu124",
-        label="CUDA 12.4 latest validated audio environment",
+        label=_("CUDA 12.4 latest validated audio environment"),
         index_url="https://download.pytorch.org/whl/cu124",
         constraint_resource="audio-cu124.txt",
         torch_packages=("torch==2.6.0", "torchaudio==2.6.0", "torchvision==0.21.0"),
@@ -185,12 +186,12 @@ def _run(cmd: list[str], *, step: str, dry_run: bool, reporter: InstallReporter)
 def _run_step(cmd: list[str], *, step: str, dry_run: bool, reporter: InstallReporter) -> StepResult:
     started = time.monotonic()
     command_text = _command_text(cmd)
-    reporter.human("+ " + command_text)
+    reporter.human(_("+ {}").format(command_text))
     reporter.event("install_step_started", stage="install", step=step, command=cmd, message=command_text, dry_run=dry_run)
     reporter.event("install_subprocess_started", stage="install", step=step, command=cmd, dry_run=dry_run)
     if dry_run:
         duration = time.monotonic() - started
-        result = StepResult(name=step, command=cmd, status="skipped", return_code=0, duration_seconds=duration, dry_run=True, message="dry run")
+        result = StepResult(name=step, command=cmd, status="skipped", return_code=0, duration_seconds=duration, dry_run=True, message=_("dry run"))
         reporter.event("install_subprocess_completed", stage="install", step=step, command=cmd, return_code=0, duration_seconds=duration, dry_run=True)
         reporter.event("install_step_completed", stage="install", step=step, return_code=0, duration_seconds=duration, dry_run=True)
         return result
@@ -234,7 +235,7 @@ def _run_step(cmd: list[str], *, step: str, dry_run: bool, reporter: InstallRepo
                     "heartbeat",
                     stage="install",
                     step=step,
-                    message="subprocess is still running; no output recently",
+                    message=_("subprocess is still running; no output recently"),
                     seconds_since_last_output=round(now - last_output, 1),
                 )
                 last_heartbeat = now
@@ -259,7 +260,7 @@ def _run_step(cmd: list[str], *, step: str, dry_run: bool, reporter: InstallRepo
         duration_seconds=duration,
     )
     if return_code != 0:
-        message = f"command failed with exit code {return_code}"
+        message = _("command failed with exit code {}").format(return_code)
         reporter.event("install_step_failed", stage="install", step=step, command=cmd, return_code=return_code, duration_seconds=duration, message=message)
         raise subprocess.CalledProcessError(return_code, cmd)
 
@@ -304,18 +305,18 @@ def _gpu_candidate_supported() -> bool:
 
 def detect_install_candidates(requested_profile: str) -> ProfileDecision:
     if requested_profile != "auto":
-        return ProfileDecision((PROFILES[requested_profile],), f"using explicit profile '{requested_profile}'")
+        return ProfileDecision((PROFILES[requested_profile],), _("using explicit profile '{}'").format(requested_profile))
     if _gpu_candidate_supported():
         return ProfileDecision(
             (PROFILES["cu124"], PROFILES["cpu"]),
-            "detected a validated NVIDIA driver on Linux x86_64; trying CUDA 12.4 first and automatically falling back to CPU if validation fails",
+            _("detected a validated NVIDIA driver on Linux x86_64; trying CUDA 12.4 first and automatically falling back to CPU if validation fails"),
         )
     if _has_nvidia_smi():
         return ProfileDecision(
             (PROFILES["cpu"],),
-            "NVIDIA tooling is present, but the platform/driver is outside the validated CUDA 12.4 profile; selecting CPU",
+            _("NVIDIA tooling is present, but the platform/driver is outside the validated CUDA 12.4 profile; selecting CPU"),
         )
-    return ProfileDecision((PROFILES["cpu"],), "no validated NVIDIA runtime detected; selecting CPU profile")
+    return ProfileDecision((PROFILES["cpu"],), _("no validated NVIDIA runtime detected; selecting CPU profile"))
 
 
 def _materialize_resource(package: str, resource_name: str, *, subdir: str) -> Path:
@@ -380,7 +381,7 @@ def _env_uses_socks_proxy() -> bool:
 
 def _validate_profile(profile: InstallProfile, reporter: InstallReporter | None = None) -> ValidationResult:
     if reporter is not None:
-        reporter.event("install_validation_started", stage="install", profile=profile.name, message=f"Validating profile {profile.name}")
+        reporter.event("install_validation_started", stage="install", profile=profile.name, message=_("Validating profile {}").format(profile.name))
     script = f"""
 import importlib
 import importlib.metadata as importlib_metadata
@@ -392,6 +393,11 @@ SOCKS_ENV_KEYS = {SOCKS_ENV_KEYS!r}
 profile = {profile.name!r}
 problems = []
 notes = []
+
+try:
+    from pyroller.i18n import _ as _i18n
+except Exception:
+    def _i18n(text): return text
 
 
 def parse_version_tuple(version_text, width=3):
@@ -425,21 +431,21 @@ def dist_version(name):
 try:
     torch = importlib.import_module('torch')
 except Exception as exc:
-    print(json.dumps({{'ok': False, 'message': f'torch import failed: {{exc.__class__.__name__}}: {{exc}}'}}))
+    print(json.dumps({{'ok': False, 'message': _i18n('torch import failed: {{}}: {{}}').format(exc.__class__.__name__, exc)}}))
     raise SystemExit(0)
 
 try:
     importlib.import_module('torchaudio')
 except Exception as exc:
-    problems.append(f'torchaudio import failed: {{exc.__class__.__name__}}: {{exc}}')
+    problems.append(_i18n('torchaudio import failed: {{}}: {{}}').format(exc.__class__.__name__, exc))
 
 loaded = {{'torch': getattr(torch, '__version__', '?')}}
 for name in ('faster_whisper', 'ctranslate2', 'demucs', 'librosa', 'transformers', 'huggingface_hub'):
     try:
         module = importlib.import_module(name)
-        loaded[name] = getattr(module, '__version__', dist_version(name) or 'unknown')
+        loaded[name] = getattr(module, '__version__', dist_version(name) or _i18n('unknown'))
     except Exception as exc:
-        problems.append(f'{{name}} import failed: {{exc.__class__.__name__}}: {{exc}}')
+        problems.append(_i18n('{{}} import failed: {{}}: {{}}').format(name, exc.__class__.__name__, exc))
 
 cuda_version = getattr(getattr(torch, 'version', None), 'cuda', None)
 try:
@@ -449,29 +455,29 @@ except Exception:
 
 parsed_torch = parse_version_tuple(loaded['torch'])
 if parsed_torch is None or parsed_torch < MIN_TORCH:
-    problems.append(f'torch {{loaded["torch"]}} is too old for the current transcriber stack; need >= {{".".join(str(x) for x in MIN_TORCH)}}')
+    problems.append(_i18n('torch {{}} is too old for the current transcriber stack; need >= {{}}').format(loaded['torch'], '.'.join(str(x) for x in MIN_TORCH)))
 
 transformers_version = loaded.get('transformers')
 if transformers_version and parsed_torch is not None and parsed_torch < MIN_TORCH:
-    problems.append(f'transformers {{transformers_version}} with torch {{loaded["torch"]}} may break local transcriber model loading')
+    problems.append(_i18n('transformers {{}} with torch {{}} may break local transcriber model loading').format(transformers_version, loaded['torch']))
 
 uses_socks = any('socks' in os.environ.get(key, '').lower() for key in SOCKS_ENV_KEYS)
 if uses_socks:
     try:
         importlib.import_module('socksio')
     except Exception as exc:
-        problems.append(f'SOCKS proxy detected but socksio is unavailable: {{exc.__class__.__name__}}: {{exc}}')
+        problems.append(_i18n('SOCKS proxy detected but socksio is unavailable: {{}}: {{}}').format(exc.__class__.__name__, exc))
     else:
-        notes.append('socksio available for SOCKS proxy support')
+        notes.append(_i18n('socksio available for SOCKS proxy support'))
 
 if profile == 'cpu':
     if cuda_version is not None:
-        problems.append(f'expected CPU torch build but found cuda={{cuda_version}}')
+        problems.append(_i18n('expected CPU torch build but found cuda={{}}').format(cuda_version))
 else:
     if cuda_version is None:
-        problems.append('expected CUDA-enabled torch build but torch.version.cuda is None')
+        problems.append(_i18n('expected CUDA-enabled torch build but torch.version.cuda is None'))
     elif not cuda_available:
-        problems.append(f'expected CUDA to be available for profile {{profile}}, but torch.cuda.is_available() is False (cuda={{cuda_version}})')
+        problems.append(_i18n('expected CUDA to be available for profile {{}}, but torch.cuda.is_available() is False (cuda={{}})').format(profile, cuda_version))
 
 summary = [f'torch={{loaded["torch"]}}', f'cuda={{cuda_version}}', f'cuda_available={{cuda_available}}']
 if transformers_version:
@@ -485,13 +491,13 @@ print(json.dumps({{'ok': not problems, 'message': message}}))
     output = [line for line in (result.stdout or "").splitlines() if line.strip()]
     payload = output[-1] if output else ""
     if result.returncode != 0:
-        validation = ValidationResult(profile.name, False, (result.stderr or payload or "validation subprocess failed").strip())
+        validation = ValidationResult(profile.name, False, (result.stderr or payload or _("validation subprocess failed")).strip())
     else:
         try:
             data = json.loads(payload)
             validation = ValidationResult(profile.name, bool(data.get("ok")), str(data.get("message", "")))
         except Exception:
-            validation = ValidationResult(profile.name, False, payload or (result.stderr or "unable to parse validation output").strip())
+            validation = ValidationResult(profile.name, False, payload or (result.stderr or _("unable to parse validation output")).strip())
     if reporter is not None:
         reporter.event(
             "install_validation_completed",
@@ -537,7 +543,7 @@ def _install_profile_packages(
 
 def build_install_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
+        description=_(
             "Install or repair the official py-roller audio/transcriber runtime in the current Python environment. "
             "The auto profile tries the validated CUDA 12.4 stack on supported Linux/NVIDIA machines and falls back to CPU if validation fails."
         )
@@ -546,21 +552,21 @@ def build_install_parser() -> argparse.ArgumentParser:
         "--profile",
         choices=("auto", "cpu", "cu124"),
         default="auto",
-        help="Runtime profile: auto selects the best validated option, cpu forces CPU wheels, cu124 forces CUDA 12.4 wheels. Default: auto",
+        help=_("Runtime profile: auto selects the best validated option, cpu forces CPU wheels, cu124 forces CUDA 12.4 wheels. Default: auto"),
     )
     parser.add_argument(
         "--reset-torch",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Uninstall existing torch/torchaudio/torchvision first to avoid ABI/flavor mismatches. Default: true",
+        help=_("Uninstall existing torch/torchaudio/torchvision first to avoid ABI/flavor mismatches. Default: true"),
     )
-    parser.add_argument("--skip-doctor", action="store_true", help="Skip the post-install 'py-roller doctor' validation step.")
-    parser.add_argument("--dry-run", action="store_true", help="Print the pip commands that would run, but do not install anything.")
+    parser.add_argument("--skip-doctor", action="store_true", help=_("Skip the post-install 'py-roller doctor' validation step."))
+    parser.add_argument("--dry-run", action="store_true", help=_("Print the pip commands that would run, but do not install anything."))
     parser.add_argument(
         "--progress-format",
         choices=("human", "jsonl", "both"),
         default="human",
-        help=(
+        help=_(
             "Install progress output format. human keeps terminal output; "
             "jsonl emits machine-readable PYROLLER_EVENT lines; both emits both. Default: human"
         ),
@@ -569,7 +575,7 @@ def build_install_parser() -> argparse.ArgumentParser:
         "--output-format",
         choices=("human", "json"),
         default="human",
-        help="Final install summary format. Use json for machine-readable install reports. Default: human",
+        help=_("Final install summary format. Use json for machine-readable install reports. Default: human"),
     )
     return parser
 
@@ -610,20 +616,20 @@ def run_install_command(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         reset_torch=args.reset_torch,
     )
-    reporter.human(f"Python                  : {PYTHON}")
-    reporter.human(f"Install reason          : {decision.reason}")
-    reporter.human(f"Audio core requirements : {', '.join(requirements)}")
+    reporter.human(_("Python                  : {}").format(PYTHON))
+    reporter.human(_("Install reason          : {}").format(decision.reason))
+    reporter.human(_("Audio core requirements : {}").format(', '.join(requirements)))
     if _env_uses_socks_proxy():
-        reporter.human("Proxy note              : SOCKS proxy detected in environment; install validation will require socksio/httpx[socks]")
-        reporter.event("install_proxy_detected", stage="install", message="SOCKS proxy detected in environment")
+        reporter.human(_("Proxy note              : SOCKS proxy detected in environment; install validation will require socksio/httpx[socks]"))
+        reporter.event("install_proxy_detected", stage="install", message=_("SOCKS proxy detected in environment"))
 
     errors: list[str] = []
     try:
         if args.dry_run:
             for profile in decision.candidates:
                 constraints_path = _materialize_constraint_file(profile.constraint_resource)
-                reporter.human(f"\nPlanned profile         : {profile.name} ({profile.label})")
-                reporter.human(f"Constraint file         : {constraints_path}")
+                reporter.human(_("\nPlanned profile         : {} ({})").format(profile.name, profile.label))
+                reporter.human(_("Constraint file         : {}").format(constraints_path))
                 reporter.event(
                     "install_profile_selected",
                     stage="install",
@@ -644,15 +650,15 @@ def run_install_command(args: argparse.Namespace) -> int:
                 )
                 if not args.skip_doctor:
                     report.steps.append(_run([PYTHON, "-m", "pyroller.cli.main", "doctor", "--output-format", "json"], step="doctor", dry_run=True, reporter=reporter))
-            _finish_report(report, ok=True, message="dry run complete")
-            reporter.event("install_completed", stage="install", ok=True, dry_run=True, message="dry run complete")
+            _finish_report(report, ok=True, message=_("dry run complete"))
+            reporter.event("install_completed", stage="install", ok=True, dry_run=True, message=_("dry run complete"))
             _print_final_report(report, args.output_format)
             return 0
 
         for idx, profile in enumerate(decision.candidates, start=1):
             constraints_path = _materialize_constraint_file(profile.constraint_resource)
-            reporter.human(f"\nInstalling profile {idx}/{len(decision.candidates)}: {profile.name} ({profile.label})")
-            reporter.human(f"Constraint file         : {constraints_path}")
+            reporter.human(_("\nInstalling profile {idx}/{total}: {name} ({label})").format(idx=idx, total=len(decision.candidates), name=profile.name, label=profile.label))
+            reporter.human(_("Constraint file         : {}").format(constraints_path))
             reporter.event(
                 "install_profile_selected",
                 stage="install",
@@ -677,15 +683,15 @@ def run_install_command(args: argparse.Namespace) -> int:
                 failed_step = "subprocess"
                 if report.steps:
                     failed_step = report.steps[-1].name
-                message = f"profile {profile.name} installation command failed with exit code {exc.returncode}"
+                message = _("profile {name} installation command failed with exit code {code}").format(name=profile.name, code=exc.returncode)
                 errors.append(message)
-                reporter.human(f"Profile {profile.name} install failed: {message}")
+                reporter.human(_("Profile {name} install failed: {msg}").format(name=profile.name, msg=message))
                 if args.profile != "auto" or idx == len(decision.candidates):
                     _finish_report(report, ok=False, message=message, failed_step=failed_step)
                     reporter.event("install_failed", stage="install", profile=profile.name, ok=False, message=message, failed_step=failed_step)
                     _print_final_report(report, args.output_format)
                     return 1
-                reporter.human("Falling back to the next profile candidate...")
+                reporter.human(_("Falling back to the next profile candidate..."))
                 reporter.event("install_profile_fallback", stage="install", profile=profile.name, message=message)
                 continue
 
@@ -693,7 +699,7 @@ def run_install_command(args: argparse.Namespace) -> int:
             report.validations.append(validation)
             if validation.ok:
                 report.selected_profile = profile.name
-                reporter.human(f"Validation succeeded for profile {profile.name}: {validation.message}")
+                reporter.human(_("Validation succeeded for profile {name}: {msg}").format(name=profile.name, msg=validation.message))
                 if not args.skip_doctor:
                     reporter.event("install_doctor_started", stage="install", profile=profile.name)
                     from pyroller.cli.doctor import build_doctor_report, print_doctor_human
@@ -710,35 +716,35 @@ def run_install_command(args: argparse.Namespace) -> int:
                         checks=[item.to_dict() for item in doctor_report.checks],
                     )
                     if not doctor_report.ok:
-                        message = "post-install doctor reported problems"
+                        message = _("post-install doctor reported problems")
                         _finish_report(report, ok=False, message=message, failed_step="doctor")
                         reporter.event("install_failed", stage="install", profile=profile.name, ok=False, message=message, failed_step="doctor")
                         _print_final_report(report, args.output_format)
                         return 1
-                _finish_report(report, ok=True, message=f"profile {profile.name} installed and validated")
+                _finish_report(report, ok=True, message=_("profile {name} installed and validated").format(name=profile.name))
                 reporter.event("install_completed", stage="install", profile=profile.name, ok=True, message=report.message)
                 _print_final_report(report, args.output_format)
                 return 0
 
-            errors.append(f"profile {profile.name} validation failed: {validation.message}")
-            reporter.human(f"Profile {profile.name} validation failed: {validation.message}")
+            errors.append(_("profile {name} validation failed: {msg}").format(name=profile.name, msg=validation.message))
+            reporter.human(_("Profile {name} validation failed: {msg}").format(name=profile.name, msg=validation.message))
             if args.profile != "auto" or idx == len(decision.candidates):
-                message = validation.message or "validation failed"
+                message = validation.message or _("validation failed")
                 _finish_report(report, ok=False, message=message, failed_step="validation")
                 reporter.event("install_failed", stage="install", profile=profile.name, ok=False, message=message, failed_step="validation")
                 _print_final_report(report, args.output_format)
                 return 1
-            reporter.human("Falling back to the next profile candidate...")
+            reporter.human(_("Falling back to the next profile candidate..."))
             reporter.event("install_profile_fallback", stage="install", profile=profile.name, message=validation.message)
 
-        message = "; ".join(errors) if errors else "no validated install profile succeeded"
+        message = "; ".join(errors) if errors else _("no validated install profile succeeded")
         _finish_report(report, ok=False, message=message, failed_step="profile_selection")
         reporter.event("install_failed", stage="install", ok=False, message=message, failed_step="profile_selection")
         _print_final_report(report, args.output_format)
         return 1
     except Exception as exc:
-        message = f"{exc.__class__.__name__}: {exc}"
-        _finish_report(report, ok=False, message=message, failed_step=report.failed_step or "unexpected")
+        message = _("{}: {}").format(exc.__class__.__name__, exc)
+        _finish_report(report, ok=False, message=message, failed_step=report.failed_step or _("unexpected"))
         reporter.event("install_failed", stage="install", ok=False, message=message, failed_step=report.failed_step)
         _print_final_report(report, args.output_format)
         raise

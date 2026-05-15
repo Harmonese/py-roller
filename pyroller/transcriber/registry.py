@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from pyroller.i18n import _
 from typing import Any
 
 from pyroller.transcriber.base import Transcriber
@@ -21,7 +23,7 @@ def resolve_transcriber_language(language: str) -> str:
     normalized = (language or "").strip().lower()
     if normalized in _SUPPORTED_LANGUAGES:
         return normalized
-    logger.error("Unsupported language=%s for transcriber. Falling back to language=%s.", language, _FALLBACK_LANGUAGE)
+    logger.error(_("Unsupported language=%s for transcriber. Falling back to language=%s."), language, _FALLBACK_LANGUAGE)
     return _FALLBACK_LANGUAGE
 
 
@@ -44,8 +46,7 @@ def resolve_transcriber_backend(language: str, backend_name: str | None) -> tupl
     chosen_backend = backend_name or _DEFAULT_TRANSCRIBER_BY_LANGUAGE[effective_language]
     if chosen_backend not in available_specs:
         raise ValueError(
-            f"Unsupported transcriber backend {chosen_backend!r} for language {effective_language!r}. "
-            f"Available backends: {', '.join(available_specs)}"
+            _("Unsupported transcriber backend {!r} for language {!r}. Available backends: {}").format(chosen_backend, effective_language, ", ".join(available_specs))
         )
     return effective_language, chosen_backend
 
@@ -74,7 +75,7 @@ def sanitize_transcriber_config(backend_name: str, config: dict[str, Any] | None
     ignored = sorted(set(init_config) - set(accepted))
     if ignored:
         logger.info(
-            "Ignoring backend-incompatible transcriber option(s) for %s: %s",
+            _("Ignoring backend-incompatible transcriber option(s) for %s: %s"),
             backend_name,
             ", ".join(ignored),
         )

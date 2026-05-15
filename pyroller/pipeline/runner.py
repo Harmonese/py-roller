@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pyroller.i18n import _
 
 import importlib.util
 import json
@@ -86,7 +87,7 @@ class ComposablePipelineRunner:
             stages=stages,
             language=effective_language,
             requested_language=request.language,
-            message="Pipeline run started",
+            message=_("Pipeline run started"),
         )
         try:
             self._validate_request(request, stages)
@@ -138,10 +139,10 @@ class ComposablePipelineRunner:
             aligner_cfg = dict(request.backend_config.get("aligner", {}))
             writer_cfg = dict(request.backend_config.get("writer", {}))
 
-            logger.info("Execution plan resolved: %s", " -> ".join(stages))
+            logger.info(_("Execution plan resolved: %s"), " -> ".join(stages))
             if effective_language != request.language:
-                logger.info("Effective pipeline language resolved to %s (requested=%s)", effective_language, request.language)
-            logger.info("Intermediate task dir: %s", request.intermediate_dir)
+                logger.info(_("Effective pipeline language resolved to %s (requested=%s)"), effective_language, request.language)
+            logger.info(_("Intermediate task dir: %s"), request.intermediate_dir)
             self._log_inputs(request, stages)
 
             if "splitter" in stages:
@@ -163,7 +164,7 @@ class ComposablePipelineRunner:
                 result.current_audio_artifact = split_artifact
                 result.artifacts.append(split_artifact)
                 result.executed_stages.append("splitter")
-                logger.info("Stage splitter complete -> %s", split_artifact.path)
+                logger.info(_("Stage splitter complete -> %s"), split_artifact.path)
 
             if "filter" in stages:
                 input_audio = self._require_audio_input(registry, "filter")
@@ -173,7 +174,7 @@ class ComposablePipelineRunner:
                     output_dir=request.intermediate_dir / "filter",
                     config=filter_cfg,
                 )
-                logger.info("Using filter chain: %s", ", ".join(chain_names) if chain_names else "<empty>")
+                logger.info(_("Using filter chain: %s"), ", ".join(chain_names) if chain_names else _("<empty>"))
                 filtered_artifact = filter_chain.process(input_audio, progress=self.progress_reporter)
                 if request.output_filtered_audio_path is not None:
                     filtered_artifact = self._materialize_audio_artifact(
@@ -186,7 +187,7 @@ class ComposablePipelineRunner:
                 result.current_audio_artifact = filtered_artifact
                 result.artifacts.append(filtered_artifact)
                 result.executed_stages.append("filter")
-                logger.info("Stage filter complete -> %s", filtered_artifact.path)
+                logger.info(_("Stage filter complete -> %s"), filtered_artifact.path)
 
             if "transcriber" in stages:
                 input_audio = self._require_audio_input(registry, "transcriber")
@@ -197,33 +198,33 @@ class ComposablePipelineRunner:
                 if request.output_timed_units_path is not None:
                     transcription.save(request.output_timed_units_path)
                     self._emit_artifact_written("transcriber", "timed_units", request.output_timed_units_path)
-                    logger.info("Wrote timed_units artifact to %s", request.output_timed_units_path)
+                    logger.info(_("Wrote timed_units artifact to %s"), request.output_timed_units_path)
                 result.executed_stages.append("transcriber")
-                logger.info("Stage transcriber complete -> %d timed units", len(transcription.units))
+                logger.info(_("Stage transcriber complete -> %d timed units"), len(transcription.units))
 
             if "parser" in stages:
                 parser_stage = self.progress_reporter.stage("parser", total=2, unit="phase")
                 parser_failed = True
                 try:
-                    parser_stage.phase("parsing lyrics")
+                    parser_stage.phase(_("parsing lyrics"))
                     lyrics_document = self._require_registry_item(registry, "lyrics_text", "parser")
                     parser = get_lyrics_parser(effective_language, config=parser_cfg)
                     parsed_lyrics = parser.parse(lyrics_document, language=effective_language, tone_mode="ignore")
-                    parser_stage.phase(f"parsed {len(parsed_lyrics.lines)} lyric lines")
+                    parser_stage.phase(_("parsed {} lyric lines").format(len(parsed_lyrics.lines)))
                     registry["parsed_lyrics"] = parsed_lyrics
                     result.parsed_lyrics = parsed_lyrics
                     if request.output_parsed_lyrics_path is not None:
                         parsed_lyrics.save(request.output_parsed_lyrics_path)
                         self._emit_artifact_written("parser", "parsed_lyrics", request.output_parsed_lyrics_path)
-                        logger.info("Wrote parsed_lyrics artifact to %s", request.output_parsed_lyrics_path)
+                        logger.info(_("Wrote parsed_lyrics artifact to %s"), request.output_parsed_lyrics_path)
                     parser_failed = False
                 finally:
                     if parser_failed:
-                        parser_stage.fail("parser failed")
+                        parser_stage.fail(_("parser failed"))
                     else:
-                        parser_stage.close("parser complete")
+                        parser_stage.close(_("parser complete"))
                 result.executed_stages.append("parser")
-                logger.info("Stage parser complete -> %d lines", len(parsed_lyrics.lines))
+                logger.info(_("Stage parser complete -> %d lines"), len(parsed_lyrics.lines))
 
             if "aligner" in stages:
                 transcription = self._require_registry_item(registry, "timed_units", "aligner")
@@ -232,42 +233,42 @@ class ComposablePipelineRunner:
                     backend_name=str(aligner_cfg.get("backend")) if aligner_cfg.get("backend") else None,
                     config=aligner_cfg,
                 )
-                logger.info("Using aligner backend: %s", getattr(aligner, "name", aligner.__class__.__name__))
+                logger.info(_("Using aligner backend: %s"), getattr(aligner, "name", aligner.__class__.__name__))
                 alignment = aligner.align(transcription, parsed_lyrics, progress=self.progress_reporter)
                 registry["alignment_result"] = alignment
                 result.alignment = alignment
                 if request.output_alignment_result_path is not None:
                     alignment.save(request.output_alignment_result_path)
                     self._emit_artifact_written("aligner", "alignment_result", request.output_alignment_result_path)
-                    logger.info("Wrote alignment_result artifact to %s", request.output_alignment_result_path)
+                    logger.info(_("Wrote alignment_result artifact to %s"), request.output_alignment_result_path)
                 result.executed_stages.append("aligner")
-                logger.info("Stage aligner complete -> %d aligned lines", len(alignment.lines))
+                logger.info(_("Stage aligner complete -> %d aligned lines"), len(alignment.lines))
 
             if "writer" in stages:
                 writer_stage = self.progress_reporter.stage("writer", total=2, unit="phase")
                 writer_failed = True
                 try:
-                    writer_stage.phase("writing output")
+                    writer_stage.phase(_("writing output"))
                     alignment = self._require_registry_item(registry, "alignment_result", "writer")
                     output_path = request.output_roller_path
                     if output_path is None:
-                        raise ValueError("Writer stage requires --output-roller.")
+                        raise ValueError(_("Writer stage requires --output-roller."))
                     writer = build_writer(
                         backend_name=str(writer_cfg.get("backend")) if writer_cfg.get("backend") else None,
                         config=writer_cfg,
                     )
-                    logger.info("Using writer backend: %s", getattr(writer, "backend_name", getattr(writer, "name", writer.__class__.__name__)))
+                    logger.info(_("Using writer backend: %s"), getattr(writer, "backend_name", getattr(writer, "name", writer.__class__.__name__)))
                     result.write_result = writer.write(alignment, output_path)
-                    writer_stage.phase("output written")
+                    writer_stage.phase(_("output written"))
                     self._emit_artifact_written("writer", "roller", result.write_result.output_path)
                     writer_failed = False
                 finally:
                     if writer_failed:
-                        writer_stage.fail("writer failed")
+                        writer_stage.fail(_("writer failed"))
                     else:
-                        writer_stage.close("writer complete")
+                        writer_stage.close(_("writer complete"))
                 result.executed_stages.append("writer")
-                logger.info("Stage writer complete -> %s", result.write_result.output_path)
+                logger.info(_("Stage writer complete -> %s"), result.write_result.output_path)
 
             success = True
             self.progress_reporter.event(
@@ -275,7 +276,7 @@ class ComposablePipelineRunner:
                 stage="run",
                 stages=stages,
                 executed_stages=result.executed_stages,
-                message="Pipeline run completed",
+                message=_("Pipeline run completed"),
                 done=True,
             )
             return result
@@ -284,7 +285,7 @@ class ComposablePipelineRunner:
                 "run_failed",
                 stage="run",
                 stages=stages,
-                message=f"Pipeline run failed: {exc.__class__.__name__}: {exc}",
+                message=_("Pipeline run failed: {}: {}").format(exc.__class__.__name__, exc),
                 error_type=exc.__class__.__name__,
                 error=str(exc),
                 failed=True,
@@ -300,7 +301,7 @@ class ComposablePipelineRunner:
             stage=stage,
             artifact_type=artifact_type,
             path=str(path) if path is not None else None,
-            message=f"Wrote {artifact_type} artifact" if path is not None else f"Wrote {artifact_type} artifact",
+            message=_("Wrote {} artifact").format(artifact_type),
         )
 
     def _cleanup_intermediate_dir(self, request: PipelineRequest) -> None:
@@ -310,15 +311,15 @@ class ComposablePipelineRunner:
             return
         marker_path = request.intermediate_dir / _INTERMEDIATE_OWNER_MARKER
         if not marker_path.exists():
-            logger.warning("Refusing to remove intermediate dir without ownership marker: %s", request.intermediate_dir)
+            logger.warning(_("Refusing to remove intermediate dir without ownership marker: %s"), request.intermediate_dir)
             return
         try:
             marker = json.loads(marker_path.read_text(encoding="utf-8"))
         except Exception:
-            logger.warning("Refusing to remove intermediate dir with unreadable ownership marker: %s", request.intermediate_dir)
+            logger.warning(_("Refusing to remove intermediate dir with unreadable ownership marker: %s"), request.intermediate_dir)
             return
         if not marker.get("owned_by") == "py-roller" or marker.get("intermediate_dir") != str(request.intermediate_dir.resolve()):
-            logger.warning("Refusing to remove intermediate dir with mismatched ownership marker: %s", request.intermediate_dir)
+            logger.warning(_("Refusing to remove intermediate dir with mismatched ownership marker: %s"), request.intermediate_dir)
             return
         shutil.rmtree(request.intermediate_dir, ignore_errors=True)
 
@@ -329,7 +330,7 @@ class ComposablePipelineRunner:
             try:
                 stage = _STAGE_ALIASES[raw.lower()]
             except KeyError as exc:
-                raise ValueError(f"Unknown stage: {raw}") from exc
+                raise ValueError(_("Unknown stage: {}").format(raw)) from exc
             if stage not in seen:
                 seen.add(stage)
                 canonical.append(stage)
@@ -339,12 +340,12 @@ class ComposablePipelineRunner:
         normalized = (requested_language or "").strip().lower()
         if normalized in {"zh", "en", "mul"}:
             return normalized
-        logger.error("Unsupported language=%s. Falling back to language=mul.", requested_language)
+        logger.error(_("Unsupported language=%s. Falling back to language=mul."), requested_language)
         return "mul"
 
     def _validate_request(self, request: PipelineRequest, stages: list[str]) -> None:
         if not stages:
-            raise ValueError("At least one stage is required. Use --stages s,f,t,p,a,w or a subset.")
+            raise ValueError(_("At least one stage is required. Use --stages s,f,t,p,a,w or a subset."))
         self._validate_contiguous_stage_chain(stages)
 
         first_stage = stages[0]
@@ -355,30 +356,30 @@ class ComposablePipelineRunner:
             explicit_aligner_inputs.append("--parsed-lyrics")
         if first_stage != "aligner" and explicit_aligner_inputs:
             joined = " and ".join(explicit_aligner_inputs)
-            raise ValueError(f"{joined} {'is' if len(explicit_aligner_inputs) == 1 else 'are'} only allowed when the selected stage chain starts with 'a'/'aligner'.")
+            raise ValueError(_("{} {} only allowed when the selected stage chain starts with 'a'/'aligner'.").format(joined, _("is") if len(explicit_aligner_inputs) == 1 else _("are")))
         if first_stage != "writer" and request.alignment_result_path is not None:
-            raise ValueError("--alignment-result is only allowed when the selected stage chain starts with 'w'/'writer'.")
+            raise ValueError(_("--alignment-result is only allowed when the selected stage chain starts with 'w'/'writer'."))
         if "parser" not in stages and request.lyrics_path is not None:
-            raise ValueError("--lyrics is only allowed when the selected stage chain includes 'p'/'parser'.")
+            raise ValueError(_("--lyrics is only allowed when the selected stage chain includes 'p'/'parser'."))
         if "parser" not in stages and request.parser_lyrics_encoding is not None:
-            raise ValueError("--parser-lyrics-encoding is only allowed when the selected stage chain includes 'p'/'parser'.")
+            raise ValueError(_("--parser-lyrics-encoding is only allowed when the selected stage chain includes 'p'/'parser'."))
         if first_stage not in {"splitter", "filter", "transcriber"} and request.audio_path is not None:
-            raise ValueError("--audio is only allowed when the selected stage chain starts with 's'/'splitter', 'f'/'filter', or 't'/'transcriber'.")
+            raise ValueError(_("--audio is only allowed when the selected stage chain starts with 's'/'splitter', 'f'/'filter', or 't'/'transcriber'."))
 
         if request.output_vocal_audio_path is not None and "splitter" not in stages:
-            raise ValueError("--output-vocal-audio requires stage 's'/'splitter'.")
+            raise ValueError(_("--output-vocal-audio requires stage 's'/'splitter'."))
         if request.output_filtered_audio_path is not None and "filter" not in stages:
-            raise ValueError("--output-filtered-audio requires stage 'f'/'filter'.")
+            raise ValueError(_("--output-filtered-audio requires stage 'f'/'filter'."))
         if request.output_timed_units_path is not None and "transcriber" not in stages:
-            raise ValueError("--output-timed-units requires stage 't'/'transcriber'.")
+            raise ValueError(_("--output-timed-units requires stage 't'/'transcriber'."))
         if request.output_parsed_lyrics_path is not None and "parser" not in stages:
-            raise ValueError("--output-parsed-lyrics requires stage 'p'/'parser'.")
+            raise ValueError(_("--output-parsed-lyrics requires stage 'p'/'parser'."))
         if request.output_alignment_result_path is not None and "aligner" not in stages:
-            raise ValueError("--output-alignment-result requires stage 'a'/'aligner'.")
+            raise ValueError(_("--output-alignment-result requires stage 'a'/'aligner'."))
         if request.output_roller_path is not None and "writer" not in stages:
-            raise ValueError("--output-roller requires stage 'w'/'writer'.")
+            raise ValueError(_("--output-roller requires stage 'w'/'writer'."))
         if "writer" in stages and request.output_roller_path is None:
-            raise ValueError("Stage 'writer' requires --output-roller.")
+            raise ValueError(_("Stage 'writer' requires --output-roller."))
 
         self._validate_stage_specific_options(request, stages)
 
@@ -430,9 +431,9 @@ class ComposablePipelineRunner:
             used = [flag for key, flag in splitter_flags.items() if key in splitter_cfg]
             if used:
                 joined = ", ".join(used)
-                raise ValueError(f"{joined} {'is' if len(used) == 1 else 'are'} only allowed when the selected stage chain includes 's'/'splitter'.")
+                raise ValueError(_("{} {} only allowed when the selected stage chain includes 's'/'splitter'.").format(joined, _("is") if len(used) == 1 else _("are")))
         if "filter" not in stages and "chain" in filter_cfg:
-            raise ValueError("--filter-chain is only allowed when the selected stage chain includes 'f'/'filter'.")
+            raise ValueError(_("--filter-chain is only allowed when the selected stage chain includes 'f'/'filter'."))
         if "transcriber" not in stages:
             transcriber_flags = {
                 "backend": "--transcriber-backend",
@@ -451,7 +452,7 @@ class ComposablePipelineRunner:
             used = [flag for key, flag in transcriber_flags.items() if key in transcriber_cfg]
             if used:
                 joined = ", ".join(used)
-                raise ValueError(f"{joined} {'is' if len(used) == 1 else 'are'} only allowed when the selected stage chain includes 't'/'transcriber'.")
+                raise ValueError(_("{} {} only allowed when the selected stage chain includes 't'/'transcriber'.").format(joined, _("is") if len(used) == 1 else _("are")))
         if "aligner" not in stages:
             aligner_flags = {
                 "backend": "--aligner-backend",
@@ -461,7 +462,7 @@ class ComposablePipelineRunner:
             used = [flag for key, flag in aligner_flags.items() if key in aligner_cfg]
             if used:
                 joined = ", ".join(used)
-                raise ValueError(f"{joined} {'is' if len(used) == 1 else 'are'} only allowed when the selected stage chain includes 'a'/'aligner'.")
+                raise ValueError(_("{} {} only allowed when the selected stage chain includes 'a'/'aligner'.").format(joined, _("is") if len(used) == 1 else _("are")))
         if "writer" not in stages:
             writer_flags = {
                 "backend": "--writer-backend",
@@ -471,7 +472,7 @@ class ComposablePipelineRunner:
             used = [flag for key, flag in writer_flags.items() if key in writer_cfg]
             if used:
                 joined = ", ".join(used)
-                raise ValueError(f"{joined} {'is' if len(used) == 1 else 'are'} only allowed when the selected stage chain includes 'w'/'writer'.")
+                raise ValueError(_("{} {} only allowed when the selected stage chain includes 'w'/'writer'.").format(joined, _("is") if len(used) == 1 else _("are")))
         if "transcriber" in stages:
             _, chosen_transcriber_backend = resolve_transcriber_backend(
                 self._resolve_language(request.language),
@@ -501,13 +502,13 @@ class ComposablePipelineRunner:
             if incompatible:
                 joined = ", ".join(incompatible)
                 raise ValueError(
-                    f"{joined} {'is' if len(incompatible) == 1 else 'are'} not supported by --transcriber-backend {chosen_transcriber_backend!r}."
+                    _("{} {} not supported by --transcriber-backend {!r}.").format(joined, _("is") if len(incompatible) == 1 else _("are"), chosen_transcriber_backend)
                 )
 
         if "writer" in stages:
             chosen_writer_backend = str(writer_cfg.get("backend") or "lrc_ms")
             if writer_cfg.get("tag_type") is not None and chosen_writer_backend != "ass_karaoke":
-                raise ValueError("--writer-ass-karaoke-tag-type is only allowed when --writer-backend is 'ass_karaoke'.")
+                raise ValueError(_("--writer-ass-karaoke-tag-type is only allowed when --writer-backend is 'ass_karaoke'."))
 
     def _validate_contiguous_stage_chain(self, stages: list[str]) -> None:
         indices = [_CANONICAL_STAGE_ORDER.index(stage) for stage in stages]
@@ -515,13 +516,13 @@ class ComposablePipelineRunner:
         if indices != expected:
             normalized = ",".join(stage[0] for stage in stages)
             raise ValueError(
-                "Selected stages must form a contiguous chain in canonical order s,f,t,p,a,w. "
-                f"Got normalized stages: {normalized}. For example, use s,f,t or t,p,a,w, but not s,t,w."
+                _("Selected stages must form a contiguous chain in canonical order s,f,t,p,a,w. "
+                  "Got normalized stages: {}. For example, use s,f,t or t,p,a,w, but not s,t,w.").format(normalized)
             )
 
     def _infer_input_audio_role(self, stages: list[str]) -> str:
         if not stages:
-            raise ValueError("Cannot infer audio role without any stages.")
+            raise ValueError(_("Cannot infer audio role without any stages."))
         first_stage = stages[0]
         if first_stage == "splitter":
             return "mixed_audio"
@@ -553,7 +554,7 @@ class ComposablePipelineRunner:
 
     def _format_missing_inputs(self, stage: str, missing: list[str]) -> str:
         joined = ", ".join(missing)
-        return f"Stage '{stage}' is missing required input artifact(s): {joined}. Provide them explicitly or add the producing stage(s)."
+        return _("Stage '{}' is missing required input artifact(s): {}. Provide them explicitly or add the producing stage(s).").format(stage, joined)
 
     def _get_transcriber(self, language: str, config: dict[str, Any]):
         backend_name = str(config.get("backend")) if config.get("backend") else None
@@ -596,7 +597,7 @@ class ComposablePipelineRunner:
                 missing.append(f"{module_name} ({reason})")
 
         if missing:
-            message = "Preflight dependency check failed. Missing module(s): " + ", ".join(sorted(missing))
+            message = _("Preflight dependency check failed. Missing module(s): {}").format(", ".join(sorted(missing)))
             logger.error(message)
             raise RuntimeError(message)
 
@@ -607,27 +608,27 @@ class ComposablePipelineRunner:
                 str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
             )
             transcriber = self._get_transcriber(effective_language, transcriber_cfg)
-            logger.info("Running transcriber preflight for backend=%s language=%s", transcriber_backend, effective_language)
+            logger.info(_("Running transcriber preflight for backend=%s language=%s"), transcriber_backend, effective_language)
             preflight_stage = self.progress_reporter.stage(
                 "preflight",
                 total=1 + transcriber.preflight_phase_total(effective_language),
                 unit="phase",
             )
             preflight_failed = True
-            preflight_failure_message = "preflight failed"
+            preflight_failure_message = _("preflight failed")
             try:
-                preflight_stage.phase("loading transcriber backend")
+                preflight_stage.phase(_("loading transcriber backend"))
                 preflight_report = transcriber.preflight(effective_language, stage=preflight_stage)
-                logger.info("Transcriber preflight passed: %s", json.dumps(preflight_report, ensure_ascii=False))
+                logger.info(_("Transcriber preflight passed: %s"), json.dumps(preflight_report, ensure_ascii=False))
                 preflight_failed = False
             except Exception as exc:
-                preflight_failure_message = f"preflight failed: {exc.__class__.__name__}: {exc}"
+                preflight_failure_message = _("preflight failed: {}: {}").format(exc.__class__.__name__, exc)
                 raise
             finally:
                 if preflight_failed:
                     preflight_stage.fail(preflight_failure_message)
                 else:
-                    preflight_stage.close("preflight complete")
+                    preflight_stage.close(_("preflight complete"))
 
     def _ensure_intermediate_dir_ownership(self, request: PipelineRequest, stages: list[str]) -> None:
         request.intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -641,13 +642,13 @@ class ComposablePipelineRunner:
 
     def _require_registry_item(self, registry: dict[str, Any], key: str, stage: str):
         if key not in registry:
-            raise ValueError(f"Stage '{stage}' requires artifact '{key}', but it is not available.")
+            raise ValueError(_("Stage '{}' requires artifact '{}', but it is not available.").format(stage, key))
         return registry[key]
 
     def _require_audio_role(self, registry: dict[str, Any], role: str, stage: str) -> AudioArtifact:
         item = self._require_registry_item(registry, role, stage)
         if not isinstance(item, AudioArtifact):
-            raise TypeError(f"Artifact '{role}' is not an AudioArtifact.")
+            raise TypeError(_("Artifact '{}' is not an AudioArtifact.").format(role))
         return item
 
     def _require_audio_input(self, registry: dict[str, Any], stage: str) -> AudioArtifact:
@@ -655,7 +656,7 @@ class ComposablePipelineRunner:
             item = registry.get(role)
             if isinstance(item, AudioArtifact):
                 return item
-        raise ValueError(f"Stage '{stage}' requires an audio artifact, but none is available.")
+        raise ValueError(_("Stage '{}' requires an audio artifact, but none is available.").format(stage))
 
     def _load_lyrics_document(self, lyrics_path: Path, language: str, requested_encoding: str | None) -> LyricsDocument:
         normalized_request = self._normalize_lyrics_encoding(requested_encoding)
@@ -680,7 +681,7 @@ class ComposablePipelineRunner:
                 last_was_spacing = True
 
         logger.info(
-            "Loaded lyrics: %d lines from %s (spacing lines preserved, requested_encoding=%s, used_encoding=%s)",
+            _("Loaded lyrics: %d lines from %s (spacing lines preserved, requested_encoding=%s, used_encoding=%s)"),
             len(lines),
             lyrics_path,
             normalized_request,
@@ -699,8 +700,7 @@ class ComposablePipelineRunner:
         normalized = _LYRICS_ENCODING_ALIASES.get((requested_encoding or "auto").strip().lower())
         if normalized is None:
             raise ValueError(
-                "Unsupported parser lyrics encoding "
-                f"{requested_encoding!r}. Supported values: auto, utf-8, utf-8-sig, utf-16, gbk, gb18030, shift-jis."
+                _("Unsupported parser lyrics encoding {}. Supported values: auto, utf-8, utf-8-sig, utf-16, gbk, gb18030, shift-jis.").format(repr(requested_encoding))
             )
         return normalized
 
@@ -709,28 +709,27 @@ class ComposablePipelineRunner:
             try:
                 return lyrics_path.read_text(encoding=requested_encoding), requested_encoding
             except UnicodeDecodeError as exc:
-                logger.error("Lyrics file decode failed with encoding=%s: %s", requested_encoding, lyrics_path)
-                raise ValueError(f"Lyrics file could not be decoded as {requested_encoding}: {lyrics_path}") from exc
+                logger.error(_("Lyrics file decode failed with encoding=%s: %s"), requested_encoding, lyrics_path)
+                raise ValueError(_("Lyrics file could not be decoded as {}: {}").format(requested_encoding, lyrics_path)) from exc
 
         for encoding in _AUTO_LYRICS_ENCODINGS:
             try:
                 return lyrics_path.read_text(encoding=encoding), encoding
             except UnicodeDecodeError:
                 continue
-        logger.error("Lyrics file could not be decoded with auto encodings: %s", lyrics_path)
+        logger.error(_("Lyrics file could not be decoded with auto encodings: %s"), lyrics_path)
         raise ValueError(
-            "Lyrics file could not be decoded with auto mode. Tried utf-8-sig, utf-16, gb18030, shift-jis: "
-            f"{lyrics_path}"
+            _("Lyrics file could not be decoded with auto mode. Tried utf-8-sig, utf-16, gb18030, shift-jis: {}").format(lyrics_path)
         )
 
     def _materialize_audio_artifact(self, artifact: AudioArtifact, destination: Path, stage_name: str, role: str) -> AudioArtifact:
         if artifact.path is None:
-            raise ValueError(f"Cannot materialize audio artifact from stage '{stage_name}' without a source path.")
+            raise ValueError(_("Cannot materialize audio artifact from stage '{}' without a source path.").format(stage_name))
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(artifact.path, destination)
         metadata = dict(artifact.metadata)
         metadata["materialized_from"] = str(artifact.path)
-        logger.info("Materialized %s output to %s", stage_name, destination)
+        logger.info(_("Materialized %s output to %s"), stage_name, destination)
         return AudioArtifact(
             artifact_id=make_id("artifact"),
             stage=stage_name,
@@ -746,14 +745,14 @@ class ComposablePipelineRunner:
     def _log_inputs(self, request: PipelineRequest, stages: list[str]) -> None:
         if request.audio_path is not None:
             inferred_role = self._infer_input_audio_role(stages)
-            logger.info("Input audio: %s (%s)", request.audio_path, inferred_role)
+            logger.info(_("Input audio: %s (%s)"), request.audio_path, inferred_role)
         if request.lyrics_path is not None:
-            logger.info("Input lyrics: %s", request.lyrics_path)
+            logger.info(_("Input lyrics: %s"), request.lyrics_path)
         if request.parser_lyrics_encoding is not None:
-            logger.info("Parser lyrics encoding request: %s", request.parser_lyrics_encoding)
+            logger.info(_("Parser lyrics encoding request: %s"), request.parser_lyrics_encoding)
         if request.timed_units_path is not None:
-            logger.info("Input timed_units: %s", request.timed_units_path)
+            logger.info(_("Input timed_units: %s"), request.timed_units_path)
         if request.parsed_lyrics_path is not None:
-            logger.info("Input parsed_lyrics: %s", request.parsed_lyrics_path)
+            logger.info(_("Input parsed_lyrics: %s"), request.parsed_lyrics_path)
         if request.alignment_result_path is not None:
-            logger.info("Input alignment_result: %s", request.alignment_result_path)
+            logger.info(_("Input alignment_result: %s"), request.alignment_result_path)
