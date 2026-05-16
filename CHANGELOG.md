@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.6.0] - 2026-05-17
+
+### Added
+- Added multi-language i18n support across 8 locales: Simplified Chinese (zh), Traditional Chinese Taiwan (zh_Hant), Traditional Chinese Hong Kong (zh_Hant_HK), Japanese (ja), Korean (ko), Polish (pl), Portuguese (pt), and Slovak (sk).
+- Display language auto-detects from `LANG`/`LC_ALL`/`LANGUAGE` environment variables; override with `PYROLLER_LANG` (supports both POSIX `zh_TW` and BCP 47 `zh-Hant` formats).
+- `zh_Hant_HK` automatically falls back to `zh_Hant` if the HK-specific locale file is missing.
+- All CLI help text, argparse built-in strings, pipeline output summaries, error messages, logger messages, doctor reports, install progress, and download hints are now translated.
+- `pyroller/i18n.py` normalizes locale detection with script-aware zh handling (`zh-Hant` → Traditional, `zh-HK` → Traditional HK, `zh-TW` → Traditional, `zh-CN` → Simplified).
+
+### Changed
+- **Format specifier alignment**: unified `{}`/`{!r}` (str.format) and `%s`/`%d`/`%r` (printf) style across all locale files so both format families match code usage. Each locale file now contains 664 translation entries with both format variants.
+- `--language` help now documents the distinction between pipeline language (transcription/parsing) and display language (i18n via `PYROLLER_LANG`).
+- Updated `--help` common commands section with `PYROLLER_LANG=zh` example.
+- `pyroller/resources/locales/` now contains 8 JSON translation files.
+
+### Fixed
+- Fixed ~80 silent translation fallbacks where `{}`-style `_()` calls could not find `%s`-style zh.json keys, causing untranslated English output even when locale was set.
+- Fixed 12 hardcoded English strings in `filter/registry.py`, `writer/registry.py`, `transcriber/composed.py`, `transcriber/hf_download_config.py`, and `utils/text.py` that bypassed `_()` entirely.
+- Fixed `model_resolver.py` splitting a single translatable error message across three `_()` calls, none of which matched any locale key.
+- Fixed `cli/doctor.py` using named format args (`{py_ver}`) that mismatched zh.json positional `{}` keys.
+- Fixed `JsonlStageProgress` using `{}` format while zh.json only had `%s` format for stage lifecycle messages.
+- Fixed leading-newline mismatches in doctor human output.
+- Fixed `pyroller.progress` logger output consistency: `LoggingStageProgress` and `JsonlStageProgress` now share the same format keys.
+
 ## [0.5.10] - 2026-05-16
 
 ### Added

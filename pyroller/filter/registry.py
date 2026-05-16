@@ -7,6 +7,7 @@ from pyroller.filter.base import AudioFilter
 from pyroller.filter.chain import FilterChain
 from pyroller.filter.dereverb import DereverbFilter
 from pyroller.filter.noise_gate import AdaptiveNoiseGateFilter
+from pyroller.i18n import _
 
 _FILTER_FACTORIES: dict[str, type[AudioFilter]] = {
     "noise_gate": AdaptiveNoiseGateFilter,
@@ -39,6 +40,6 @@ def build_filter_chain(
             factory = _FILTER_FACTORIES[name]
         except KeyError as exc:
             available = ", ".join(list_available_filter_backends()) or "<none registered yet>"
-            raise ValueError(f"Unsupported filter step {name!r}. Available filter steps: {available}") from exc
+            raise ValueError(_("Unsupported filter step {!r}. Available filter steps: {}").format(name, available)) from exc
         filters.append(factory())
     return FilterChain(filters=filters, output_dir=output_dir)

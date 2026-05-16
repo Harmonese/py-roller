@@ -5,6 +5,7 @@ from typing import Any
 from pyroller.writer.ass_karaoke import ASSKaraokeWriter
 from pyroller.writer.base import Writer
 from pyroller.writer.lrc import LRCWriter
+from pyroller.i18n import _
 
 _DEFAULT_WRITER = "lrc_ms"
 _AVAILABLE = ("lrc_ms", "lrc_cs", "lrc_compressed", "ass_karaoke")
@@ -30,8 +31,8 @@ def build_writer(backend_name: str | None, config: dict[str, Any] | None = None)
     if backend == "lrc_compressed":
         if keep_spacing:
             raise ValueError(
-                "writer_backend=lrc_compressed does not support writer_spacing=keep. "
-                "Compressed LRC merges repeated lines and cannot preserve blank/spacing lines."
+                _("writer_backend=lrc_compressed does not support writer_spacing=keep. "
+                  "Compressed LRC merges repeated lines and cannot preserve blank/spacing lines.")
             )
         return LRCWriter(decimals=2, compressed=True, by_tag=by_tag, keep_spacing=False)
     if backend == "ass_karaoke":
@@ -43,4 +44,4 @@ def build_writer(backend_name: str | None, config: dict[str, Any] | None = None)
         )
 
     available = ", ".join(_AVAILABLE)
-    raise ValueError(f"Unsupported writer backend {backend!r}. Available: {available}")
+    raise ValueError(_("Unsupported writer backend {!r}. Available: {}").format(backend, available))

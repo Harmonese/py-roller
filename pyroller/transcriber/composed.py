@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pyroller.domain import AudioArtifact, TranscriptionResult
+from pyroller.i18n import _
 from pyroller.progress import ProgressReporter
 from pyroller.transcriber.base import Transcriber
 from pyroller.transcriber.engines.base import TranscriberEngine
@@ -34,18 +35,18 @@ class ComposedTranscriber(Transcriber):
     ) -> TranscriptionResult:
         stage = progress.stage("transcriber", total=self.engine.transcribe_phase_total(language), unit="phase") if progress is not None else None
         stage_failed = False
-        stage_failure_message = "transcriber failed"
+        stage_failure_message = _("transcriber failed")
         try:
             engine_output = self.engine.transcribe(audio_artifact, language, stage=stage)
             result = self.adapter.adapt(engine_output, language=language, tone_mode=tone_mode)
             return result
         except Exception as exc:
             stage_failed = True
-            stage_failure_message = f"transcriber failed: {exc.__class__.__name__}: {exc}"
+            stage_failure_message = _("transcriber failed: {}: {}").format(exc.__class__.__name__, exc)
             raise
         finally:
             if stage is not None:
                 if stage_failed:
                     stage.fail(stage_failure_message)
                 else:
-                    stage.close("transcriber complete")
+                    stage.close(_("transcriber complete"))

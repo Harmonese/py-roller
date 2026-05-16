@@ -183,11 +183,11 @@ class TranscriberModelResolver:
                     )
                 ).resolve()
             except Exception as exc:
-                guidance = (
-                    _("Unable to resolve transcriber model {!r} into the local py-roller model store at {}. ").format(model_name, provider_cache_root)
-                    + _("If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. ")
-                    + _("Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {}").format(exc)
-                )
+                guidance = _(
+                    "Unable to resolve transcriber model {!r} into the local py-roller model store at {}. "
+                    "If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. "
+                    "Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {}"
+                ).format(model_name, provider_cache_root, exc)
                 raise RuntimeError(guidance) from exc
             plan.resolved_model_dir = snapshot_dir
             plan.network_required = False
@@ -242,11 +242,11 @@ class TranscriberModelResolver:
                     )
                 ).resolve()
             except Exception as exc:
-                guidance = (
-                    _("Unable to resolve faster-whisper ASR model {!r} into the local py-roller model store at {}. ").format(repo_id, provider_cache_root)
-                    + _("If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. ")
-                    + _("Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {}").format(exc)
-                )
+                guidance = _(
+                    "Unable to resolve faster-whisper ASR model {!r} into the local py-roller model store at {}. "
+                    "If you are on a restricted network, try --transcriber-hf-xet off, --transcriber-hf-proxy, or longer HF timeouts. "
+                    "Once the cache is ready, you can also pass --transcriber-local-files-only. Underlying error: {}"
+                ).format(repo_id, provider_cache_root, exc)
                 raise RuntimeError(guidance) from exc
             plan.resolved_model_dir = snapshot_dir
             plan.network_required = False

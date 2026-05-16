@@ -106,7 +106,7 @@ def _check_python() -> CheckResult:
     return CheckResult(
         name="python",
         status="ok",
-        message=_("Python {py_ver} on {sys_name} {machine}").format(py_ver=platform.python_version(), sys_name=platform.system(), machine=platform.machine()),
+        message=_("Python {} on {} {}").format(platform.python_version(), platform.system(), platform.machine()),
         version=platform.python_version(),
         details={"system": platform.system(), "machine": platform.machine()},
     )
@@ -125,7 +125,7 @@ def _check_torch() -> CheckResult:
     torch_version = str(getattr(torch, "__version__", "unknown"))
     flavor = _("cuda={}").format(cuda_version) if cuda_version else _("cpu")
     status = "ok"
-    message = _("torch {ver} ({flavor}, cuda_available={ca})").format(ver=torch_version, flavor=flavor, ca=cuda_available)
+    message = _("torch {} ({}, cuda_available={})").format(torch_version, flavor, cuda_available)
     parsed = _parse_version_tuple(torch_version)
     if parsed is None or parsed < MIN_TORCH:
         status = "fail"
@@ -216,13 +216,15 @@ def print_doctor_human(report: DoctorReport) -> None:
     print(_("  python executable      : {}").format(report.python_executable))
     for item in report.checks:
         tag = item.status.upper()
-        print(_("  [{tag:<4}] {name:<18} {msg}").format(tag=tag, name=item.name, msg=item.message))
+        print(_("  [{:<4}] {:<18} {}").format(tag, item.name, item.message))
 
     if not report.ok:
-        print(_("\nSuggested next step:"))
+        print()
+        print(_("Suggested next step:"))
         print(_("  py-roller install"))
         return
-    print(_("\nEnvironment looks healthy."))
+    print()
+    print(_("Environment looks healthy."))
 
 
 def print_doctor_json(report: DoctorReport) -> None:

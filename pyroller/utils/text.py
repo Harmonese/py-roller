@@ -6,6 +6,8 @@ from collections import Counter
 from functools import lru_cache
 from typing import Optional
 
+from pyroller.i18n import _
+
 try:
     import opencc
 except ImportError:  # pragma: no cover
@@ -315,7 +317,7 @@ def split_pinyin_tone(syllable: str) -> tuple[str, Optional[str]]:
 
 def chinese_text_to_pinyin_syllables(text: str, tone_mode: str = "ignore") -> list[dict[str, Optional[str]]]:
     if lazy_pinyin is None or Style is None:
-        raise RuntimeError("pypinyin is required for Chinese parser/transcriber normalization.")
+        raise RuntimeError(_("pypinyin is required for Chinese parser/transcriber normalization."))
 
     normalized = normalize_chinese_text(text)
     if not normalized:

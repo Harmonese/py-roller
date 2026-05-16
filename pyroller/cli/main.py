@@ -33,7 +33,7 @@ def _build_subparser_description(*, batch_mode: bool) -> str:
         if batch_mode
         else _("Run one contiguous pipeline stage chain. Inputs must match the first selected stage, and explicit artifacts are only allowed at legal chain starts.")
     )
-    language_hint = _("For best transcription/parser defaults, pass --language zh or --language en when the song language is known.")
+    language_hint = _("For best transcription/parser defaults, pass --language zh or --language en when the song language is known. Display language auto-detects from LANG/LC_ALL; set PYROLLER_LANG=zh|ja|ko|pl|pt|sk to override.")
     return _("{}\n\n{}\n\n{}").format(io_line, detail, language_hint)
 
 def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode: bool) -> None:
@@ -68,7 +68,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
         "--language",
         choices=["zh", "en", "mul"],
         default="mul",
-        help=_("Pipeline language. Use zh or en when known; mul is the multilingual fallback. Default: mul"),
+        help=_("Pipeline language for transcription/parsing. Use zh or en when known; mul is the multilingual fallback. Default: mul. Display language (i18n) is controlled by LANG/LC_ALL/PYROLLER_LANG environment variables."),
     )
 
     splitter = parser.add_argument_group(_("splitter options (stage s)"))
@@ -192,6 +192,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
             "  py-roller install\n"
             "  py-roller doctor\n"
             "  py-roller cache-model --language zh\n"
+            "  PYROLLER_LANG=zh py-roller run --help\n"
             "  py-roller run --help\n"
             "  py-roller batch --help"
         ),

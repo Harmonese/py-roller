@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 from urllib.parse import urlsplit, urlunsplit
 
+from pyroller.i18n import _
+
 _SOCKS_SCHEMES = {"socks", "socks4", "socks4a", "socks5", "socks5h"}
 
 
@@ -23,7 +25,7 @@ def _positive_timeout_seconds(value: object, *, name: str) -> int | None:
         return None
     out = float(value)
     if not math.isfinite(out) or out <= 0:
-        raise ValueError(f"{name} must be a finite number greater than 0.")
+        raise ValueError(_("{} must be a finite number greater than 0.").format(name))
     return max(1, int(math.ceil(out)))
 
 
@@ -32,7 +34,7 @@ def _positive_int(value: object, *, name: str) -> int | None:
         return None
     out = int(value)
     if out <= 0:
-        raise ValueError(f"{name} must be greater than 0.")
+        raise ValueError(_("{} must be greater than 0.").format(name))
     return out
 
 
@@ -82,7 +84,7 @@ class HFDownloadConfig:
             self.xet = "on" if self.xet else "off"
         self.xet = str(self.xet or "auto").strip().lower()
         if self.xet not in {"auto", "on", "off"}:
-            raise ValueError("hf_xet must be one of: auto, on, off.")
+            raise ValueError(_("hf_xet must be one of: auto, on, off."))
         self.proxy = _clean_optional_str(self.proxy)
         self.etag_timeout = _positive_timeout_seconds(self.etag_timeout, name="hf_etag_timeout")
         self.download_timeout = _positive_timeout_seconds(self.download_timeout, name="hf_download_timeout")
@@ -135,10 +137,10 @@ class HFDownloadConfig:
     def ensure_runtime_requirements(self) -> None:
         if _is_socks_proxy(self.proxy) and importlib.util.find_spec("socksio") is None:
             raise RuntimeError(
-                "A SOCKS proxy was configured with --transcriber-hf-proxy, but socksio is not installed. "
-                "Install or repair the audio environment with: py-roller install. "
-                "Alternatively install the missing dependency with: pip install \"httpx[socks]\", "
-                "or pass an HTTP proxy URL instead."
+                _("A SOCKS proxy was configured with --transcriber-hf-proxy, but socksio is not installed. "
+                  "Install or repair the audio environment with: py-roller install. "
+                  "Alternatively install the missing dependency with: pip install \"httpx[socks]\", "
+                  "or pass an HTTP proxy URL instead.")
             )
 
     def summary(self) -> dict[str, object]:
@@ -173,11 +175,11 @@ def huggingface_download_error_hints(exc: BaseException) -> list[str]:
     text = f"{exc.__class__.__name__}: {exc}".lower()
     hints: list[str] = []
     if any(token in text for token in ("xet", "cas", "cas-bridge", "cas-server", "hf_xet")):
-        hints.append("try --transcriber-hf-xet off to avoid the XET/CAS download path")
+        hints.append(_("try --transcriber-hf-xet off to avoid the XET/CAS download path"))
     if "socks" in text or "socksio" in text:
-        hints.append("install SOCKS support with py-roller install or pip install \"httpx[socks]\"")
+        hints.append(_("install SOCKS support with py-roller install or pip install \"httpx[socks]\""))
     if any(token in text for token in ("timeout", "timed out", "readtimeout", "connecttimeout")):
-        hints.append("increase --transcriber-hf-download-timeout and/or --transcriber-hf-etag-timeout")
+        hints.append(_("increase --transcriber-hf-download-timeout and/or --transcriber-hf-etag-timeout"))
     if any(token in text for token in ("proxy", "connection", "network is unreachable", "name resolution")):
-        hints.append("set --transcriber-hf-proxy to an HTTP/SOCKS proxy reachable from this machine")
+        hints.append(_("set --transcriber-hf-proxy to an HTTP/SOCKS proxy reachable from this machine"))
     return hints
