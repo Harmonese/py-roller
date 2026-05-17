@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.6.1] - 2026-05-17
+
+### Fixed
+- Fixed `requires-python` upper bound: changed from `>=3.10` to `>=3.10,<3.13` to prevent installation on Python 3.13+ which is not yet supported.
+
 ## [0.6.0] - 2026-05-17
 
 ### Added
