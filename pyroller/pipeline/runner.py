@@ -474,7 +474,7 @@ class ComposablePipelineRunner:
                 joined = ", ".join(used)
                 raise ValueError(_("{} {} only allowed when the selected stage chain includes 'w'/'writer'.").format(joined, _("is") if len(used) == 1 else _("are")))
         if "transcriber" in stages:
-            _, chosen_transcriber_backend = resolve_transcriber_backend(
+            _resolved_language, chosen_transcriber_backend = resolve_transcriber_backend(
                 self._resolve_language(request.language),
                 str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
             )
@@ -578,7 +578,7 @@ class ComposablePipelineRunner:
                     required_modules[module_name] = f"filter backend {filter_name}"
 
         if "transcriber" in stages:
-            _, transcriber_backend = resolve_transcriber_backend(
+            _resolved_language, transcriber_backend = resolve_transcriber_backend(
                 effective_language,
                 str(request.backend_config.get("transcriber", {}).get("backend"))
                 if request.backend_config.get("transcriber", {}).get("backend")
@@ -603,7 +603,7 @@ class ComposablePipelineRunner:
 
         if "transcriber" in stages:
             transcriber_cfg = dict(request.backend_config.get("transcriber", {}))
-            _, transcriber_backend = resolve_transcriber_backend(
+            _resolved_language, transcriber_backend = resolve_transcriber_backend(
                 effective_language,
                 str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
             )
