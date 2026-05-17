@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.6.2] - 2026-05-17
+
+### Fixed
+- Fixed an error in i18n of `transcriber`.
+- Fixed an error causing failure pipeline run.
+
+
 ## [0.6.1] - 2026-05-17
 
 ### Fixed
