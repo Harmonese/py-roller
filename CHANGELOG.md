@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.6.3] - 2026-05-20
+
+### Added
+- Added `scripts/check_i18n.py` to validate locale coverage against code message keys, including missing, extra, and untranslated entries.
+
+### Changed
+- Made argparse i18n installation explicit during CLI parser construction instead of hiding the private argparse gettext patch inside `_()`.
+- Normalized locale resources to the current message key set and completed remaining non-English fallback translations across supported locales.
+- Improved locale detection for unsupported `PYROLLER_LANG` values and colon-separated `LANGUAGE` candidates.
+- Documented that the faster-whisper `turbo` alias resolves to a CTranslate2-compatible turbo snapshot rather than a Systran snapshot.
+
+### Fixed
+- Fixed the faster-whisper `turbo` and `large-v3-turbo` aliases resolving to the nonexistent `Systran/faster-whisper-turbo` repository.
+- Fixed manifest batch building only retaining the final manifest task instead of all tasks.
+- Fixed manifest duplicate task/output conflict validation only applying to the final task.
+- Fixed `--transcriber-vad-filter` and `--writer-spacing` being accepted when their corresponding stages were not selected.
+- Fixed duplicated run-section config validation assignment.
+- Added an explicit log message when requested stages are normalized to canonical execution order.
+
 ## [0.6.2] - 2026-05-17
 
 ### Fixed

@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from pyroller.cli.config import apply_cli_config_defaults, load_cli_config, preparse_config_path
-from pyroller.i18n import _
+from pyroller.i18n import _, install_argparse_i18n
 
 def _default_intermediate_dir() -> Path:
     return Path(tempfile.gettempdir()) / "py-roller-artifacts"
@@ -183,6 +183,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
         )
 
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
+    install_argparse_i18n()
     formatter = argparse.RawTextHelpFormatter
     parser = argparse.ArgumentParser(
         prog="py-roller",

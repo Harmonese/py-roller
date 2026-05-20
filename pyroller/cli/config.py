@@ -133,7 +133,6 @@ def _validate_section_keys(sections: dict[str, dict[str, Any]]) -> None:
         raise ConfigError(
             _("Unsupported config keys under 'shared': {}. Only default option overrides are allowed.").format(", ".join(shared_unknown))
         )
-    run_unknown = sorted(set(sections.get("run", {})) - _RUN_ALLOWED_KEYS)
     run_unknown = sorted(set(sections.get("run", {})) - _RUN_ALLOWED_KEYS - _SHARED_ALLOWED_KEYS)
     if run_unknown:
         raise ConfigError(

@@ -334,7 +334,14 @@ class ComposablePipelineRunner:
             if stage not in seen:
                 seen.add(stage)
                 canonical.append(stage)
-        return [stage for stage in _CANONICAL_STAGE_ORDER if stage in canonical]
+        resolved = [stage for stage in _CANONICAL_STAGE_ORDER if stage in canonical]
+        if canonical != resolved:
+            logger.info(
+                _("Requested stages were normalized to canonical execution order: requested=%s resolved=%s"),
+                " -> ".join(canonical),
+                " -> ".join(resolved),
+            )
+        return resolved
 
     def _resolve_language(self, requested_language: str) -> str:
         normalized = (requested_language or "").strip().lower()
@@ -448,6 +455,7 @@ class ComposablePipelineRunner:
                 "hf_max_workers": "--transcriber-hf-max-workers",
                 "compute_type": "--transcriber-compute-type",
                 "batch_size": "--transcriber-batch-size",
+                "vad_filter": "--transcriber-vad-filter",
             }
             used = [flag for key, flag in transcriber_flags.items() if key in transcriber_cfg]
             if used:
@@ -466,6 +474,7 @@ class ComposablePipelineRunner:
         if "writer" not in stages:
             writer_flags = {
                 "backend": "--writer-backend",
+                "spacing": "--writer-spacing",
                 "by_tag": "--writer-by-tag",
                 "tag_type": "--writer-ass-karaoke-tag-type",
             }

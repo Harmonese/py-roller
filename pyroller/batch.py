@@ -251,19 +251,19 @@ class ManifestBatchBuilder:
                     raise ValueError(_("Manifest task #{} must be a mapping/object.").format(index))
                 task = self._task_from_entry(index, entry, request)
                 runner._validate_request(task.request, stages)
-            if task.stem in seen_stems:
-                raise ValueError(_("Manifest task ids/stems must be unique. Duplicate: {}").format(task.stem))
-            seen_stems.add(task.stem)
-            for output_path in task.expected_outputs:
-                resolved = output_path.resolve()
-                owner = output_owner.get(resolved)
-                if owner is not None:
-                    raise ValueError(
-                        _("Manifest output path conflict: {} is declared by both '{}' and '{}'. "
-                          "Each task must write to unique final output paths.").format(resolved, owner, task.stem)
-                    )
-                output_owner[resolved] = task.stem
-            tasks.append(task)
+                if task.stem in seen_stems:
+                    raise ValueError(_("Manifest task ids/stems must be unique. Duplicate: {}").format(task.stem))
+                seen_stems.add(task.stem)
+                for output_path in task.expected_outputs:
+                    resolved = output_path.resolve()
+                    owner = output_owner.get(resolved)
+                    if owner is not None:
+                        raise ValueError(
+                            _("Manifest output path conflict: {} is declared by both '{}' and '{}'. "
+                              "Each task must write to unique final output paths.").format(resolved, owner, task.stem)
+                        )
+                    output_owner[resolved] = task.stem
+                tasks.append(task)
         finally:
             runner.close()
         if not tasks:

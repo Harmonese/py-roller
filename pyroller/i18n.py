@@ -6,19 +6,26 @@ from pathlib import Path
 
 _locale: str | None = None
 _translations: dict[str, str] = {}
+_SUPPORTED_LOCALES = frozenset({"zh", "zh_hant", "zh_hant_hk", "ja", "ko", "pl", "pt", "sk", "en"})
 
 
 def _detect_locale() -> str:
     env_lang = os.environ.get("PYROLLER_LANG")
     if env_lang:
-        return _normalize_locale(env_lang)
-    for var in ("LC_ALL", "LANG", "LANGUAGE"):
-        val = os.environ.get(var, "")
-        if val:
-            result = _normalize_locale(val)
-            if result in ("zh", "zh_hant", "zh_hant_hk", "ja", "ko", "pl", "pt", "sk", "en"):
+        normalized = _normalize_locale(env_lang)
+        return normalized if normalized in _SUPPORTED_LOCALES else "en"
+    for var in ("LC_ALL", "LANGUAGE", "LANG"):
+        for value in _locale_candidates(os.environ.get(var, "")):
+            result = _normalize_locale(value)
+            if result in _SUPPORTED_LOCALES:
                 return result
     return "en"
+
+
+def _locale_candidates(raw: str) -> list[str]:
+    if not raw:
+        return []
+    return [item for item in raw.split(":") if item]
 
 
 def _normalize_locale(raw: str) -> str:
@@ -72,14 +79,17 @@ def _(text: str) -> str:
     if _locale is None:
         _locale = _detect_locale()
         _translations = _load_translations(_locale)
-        _patch_argparse()
     return _translations.get(text, text)
 
 
-def _patch_argparse() -> None:
+def install_argparse_i18n() -> None:
     """Replace argparse's built-in gettext function so its own strings (like
     'usage:', 'positional arguments:', 'show this help message and exit')
-    are also translated."""
+    are also translated.
+
+    argparse exposes no public hook for this; keep the private patch explicit
+    and limited to CLI parser construction instead of hiding it inside _().
+    """
     try:
         import argparse
         argparse._ = _

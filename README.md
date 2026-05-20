@@ -267,7 +267,7 @@ Useful model options:
 - `--transcriber-model-name`: model alias, Hugging Face repo id, or explicit local path.
 - `--transcriber-local-files-only`: refuse network access and use only local files/cache.
 
-For `faster_whisper`, aliases such as `large-v2`, `large-v3`, and `turbo` resolve to the corresponding `Systran/faster-whisper-*` snapshots.
+For `faster_whisper`, aliases such as `large-v2` and `large-v3` resolve to `Systran/faster-whisper-*` snapshots. The `turbo` alias resolves to a faster-whisper-compatible CTranslate2 turbo snapshot.
 
 Example with a custom model store:
 

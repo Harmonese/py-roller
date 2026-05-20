@@ -21,6 +21,13 @@ _DEFAULT_MODEL_NAME_BY_BACKEND = {
     "faster_whisper": "large-v2",
 }
 
+_FASTER_WHISPER_REPO_ALIASES = {
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "large-v3-turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
+    "turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
+}
+
 
 def default_transcriber_model_store_root() -> Path:
     return Path.home() / ".cache" / "py-roller" / "models" / "transcriber"
@@ -259,7 +266,7 @@ class TranscriberModelResolver:
     def _resolve_faster_whisper_repo_id(self, model_name: str) -> str:
         if "/" in model_name or "\\" in model_name:
             return model_name
-        return f"Systran/faster-whisper-{model_name}"
+        return _FASTER_WHISPER_REPO_ALIASES.get(model_name, f"Systran/faster-whisper-{model_name}")
 
     def _resolve_explicit_local_path(self, model_name: str) -> Path | None:
         candidate = Path(model_name).expanduser()

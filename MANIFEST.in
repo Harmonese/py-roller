@@ -1,4 +1,7 @@
 include README.md CHANGELOG.md pyproject.toml
 recursive-include constraints *
+include scripts/check_i18n.py
 
 recursive-include pyroller/resources *
+global-exclude __pycache__/*
+global-exclude *.py[cod]
