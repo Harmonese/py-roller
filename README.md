@@ -23,7 +23,7 @@ py-roller install
 py-roller doctor
 ```
 
-`py-roller install` installs a pinned Torch/Torchaudio/TorchVision profile first, then installs the bundled `audio-core` requirements with matching constraints, validates the environment, and runs `py-roller doctor` unless `--skip-doctor` is passed.
+`py-roller install` installs a pinned Torch/Torchaudio profile first, then installs the bundled audio runtime requirements with matching constraints, validates the environment, and runs `py-roller doctor` unless `--skip-doctor` is passed.
 
 Install profiles:
 
@@ -331,7 +331,7 @@ py-roller run \
   --output-roller ./song.lrc
 ```
 
-`audio-core` installs SOCKS support through `httpx[socks]`. If the environment was installed manually and SOCKS support is missing, run:
+The official runtime installs SOCKS support through `requests[socks]`. If the environment was installed manually and SOCKS support is missing, run:
 
 ```bash
 py-roller install
@@ -340,7 +340,7 @@ py-roller install
 or install the missing dependency directly:
 
 ```bash
-pip install "httpx[socks]"
+pip install "requests[socks]"
 ```
 
 ### VAD filtering
@@ -687,7 +687,7 @@ ps -ef | grep -E 'pyroller|demucs'
 
 `py-roller install` prefers the newest validated dependency line for this release:
 
-- Torch/TorchAudio/TorchVision are installed from the official 2.6.0 family for every built-in profile.
-- SOCKS proxy support is installed by default through `httpx[socks]`, so Hugging Face downloads do not fail merely because `socksio` is missing.
+- Torch/TorchAudio are installed from the official 2.6.0 family for every built-in profile.
+- SOCKS proxy support is installed by default through `requests[socks]`, so Hugging Face downloads do not fail merely because PySocks is missing.
 
 If you upgrade or override audio/transcriber packages manually, run `py-roller doctor` before using transcription-heavy pipelines.

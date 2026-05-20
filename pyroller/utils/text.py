@@ -24,11 +24,6 @@ try:
 except ImportError:  # pragma: no cover
     pronouncing = None
 
-try:
-    from g2p_en import G2p
-except ImportError:  # pragma: no cover
-    G2p = None
-
 _CC_T2S = opencc.OpenCC("t2s") if opencc is not None else None
 _CHINESE_RE = re.compile(r"[一-鿿]")
 _NON_CHINESE_RE = re.compile(r"[^一-鿿]")
@@ -47,8 +42,6 @@ _KNOWN_ARPABET_BASES = {
     "F", "G", "HH", "IH", "IY", "JH", "K", "L", "M", "N", "NG", "OW", "OY", "P",
     "R", "S", "SH", "T", "TH", "UH", "UW", "V", "W", "Y", "Z", "ZH",
 }
-_G2P_INSTANCE = None
-
 _JOINER_CHARS = {"'", "’", "-", "_"}
 
 _GRUUT_LANGUAGE_MAP = {
@@ -376,16 +369,6 @@ def arpabet_text_to_phone_tokens(text: str) -> list[str]:
 
 
 
-def _get_g2p_instance():
-    global _G2P_INSTANCE
-    if G2p is None:
-        return None
-    if _G2P_INSTANCE is None:
-        _G2P_INSTANCE = G2p()
-    return _G2P_INSTANCE
-
-
-
 def _fallback_word_to_grapheme_units(word: str) -> list[str]:
     return [f"{_FALLBACK_GRAPHEME_PREFIX}{char.upper()}" for char in word if char.isalpha()]
 
@@ -395,13 +378,6 @@ def english_word_to_arpabet(word: str) -> list[str]:
     normalized = word.lower()
     if not normalized:
         return []
-
-    g2p = _get_g2p_instance()
-    if g2p is not None:
-        phones = [str(item).upper() for item in g2p(normalized) if isinstance(item, str)]
-        phones = [item for item in phones if _ARPABET_TOKEN_RE.match(item)]
-        if phones:
-            return phones
 
     if pronouncing is not None:
         candidates = pronouncing.phones_for_word(normalized)

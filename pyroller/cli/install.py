@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.metadata as importlib_metadata
 import importlib.resources as resources
 import json
 import os
@@ -24,7 +23,6 @@ from pyroller.utils.json import json_default
 
 PYTHON = sys.executable
 DIST_NAME = "py-roller"
-AUDIO_EXTRA = "audio-core"
 MIN_TORCH = (2, 6, 0)
 SOCKS_ENV_KEYS = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy")
 EVENT_PREFIX = "PYROLLER_EVENT "
@@ -45,14 +43,14 @@ PROFILES: dict[str, InstallProfile] = {
         label=_("CPU-only latest validated audio environment"),
         index_url="https://download.pytorch.org/whl/cpu",
         constraint_resource="audio-cpu.txt",
-        torch_packages=("torch==2.6.0", "torchaudio==2.6.0", "torchvision==0.21.0"),
+        torch_packages=("torch==2.6.0", "torchaudio==2.6.0"),
     ),
     "cu124": InstallProfile(
         name="cu124",
         label=_("CUDA 12.4 latest validated audio environment"),
         index_url="https://download.pytorch.org/whl/cu124",
         constraint_resource="audio-cu124.txt",
-        torch_packages=("torch==2.6.0", "torchaudio==2.6.0", "torchvision==0.21.0"),
+        torch_packages=("torch==2.6.0", "torchaudio==2.6.0"),
     ),
 }
 
@@ -332,25 +330,13 @@ def _materialize_constraint_file(resource_name: str) -> Path:
     return _materialize_resource("pyroller.resources.constraints", resource_name, subdir="constraints")
 
 
-def _materialize_audio_core_requirements() -> Path:
-    return _materialize_resource("pyroller.resources.requirements", "audio-core.txt", subdir="requirements")
+def _materialize_audio_runtime_requirements() -> Path:
+    return _materialize_resource("pyroller.resources.requirements", "audio-runtime.txt", subdir="requirements")
 
 
-def _installed_audio_core_requirements() -> list[str]:
-    try:
-        requires = importlib_metadata.requires(DIST_NAME) or []
-    except Exception:
-        requires = []
-
-    selected: list[str] = []
-    for req in requires:
-        if "extra == 'audio-core'" in req or 'extra == "audio-core"' in req:
-            selected.append(req.split(";", 1)[0].strip())
-    if selected:
-        return selected
-
-    fallback = _materialize_audio_core_requirements()
-    return [line.strip() for line in fallback.read_text(encoding="utf-8").splitlines() if line.strip() and not line.strip().startswith("#")]
+def _bundled_audio_runtime_requirements() -> list[str]:
+    path = _materialize_audio_runtime_requirements()
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.strip().startswith("#")]
 
 
 def _parse_version_tuple(version_text: str, *, width: int = 3) -> tuple[int, ...] | None:
@@ -464,11 +450,11 @@ if transformers_version and parsed_torch is not None and parsed_torch < MIN_TORC
 uses_socks = any('socks' in os.environ.get(key, '').lower() for key in SOCKS_ENV_KEYS)
 if uses_socks:
     try:
-        importlib.import_module('socksio')
+        importlib.import_module('socks')
     except Exception as exc:
-        problems.append(_i18n('SOCKS proxy detected but socksio is unavailable: {{}}: {{}}').format(exc.__class__.__name__, exc))
+        problems.append(_i18n('SOCKS proxy detected but PySocks is unavailable: {{}}: {{}}').format(exc.__class__.__name__, exc))
     else:
-        notes.append(_i18n('socksio available for SOCKS proxy support'))
+        notes.append(_i18n('PySocks available for SOCKS proxy support'))
 
 if profile == 'cpu':
     if cuda_version is not None:
@@ -521,7 +507,7 @@ def _install_profile_packages(
     results: list[StepResult] = []
     results.append(_run([PYTHON, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], step="upgrade_packaging_tools", dry_run=dry_run, reporter=reporter))
     if reset_torch:
-        results.append(_run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchaudio", "torchvision"], step="uninstall_existing_torch", dry_run=dry_run, reporter=reporter))
+        results.append(_run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchaudio"], step="uninstall_existing_torch", dry_run=dry_run, reporter=reporter))
     results.append(
         _run(
             [PYTHON, "-m", "pip", "install", "--force-reinstall", "--index-url", profile.index_url, *profile.torch_packages],
@@ -558,7 +544,7 @@ def build_install_parser() -> argparse.ArgumentParser:
         "--reset-torch",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help=_("Uninstall existing torch/torchaudio/torchvision first to avoid ABI/flavor mismatches. Default: true"),
+        help=_("Uninstall existing torch/torchaudio first to avoid ABI/flavor mismatches. Default: true"),
     )
     parser.add_argument("--skip-doctor", action="store_true", help=_("Skip the post-install 'py-roller doctor' validation step."))
     parser.add_argument("--dry-run", action="store_true", help=_("Print the pip commands that would run, but do not install anything."))
@@ -595,7 +581,7 @@ def _print_final_report(report: InstallReport, output_format: str) -> None:
 def run_install_command(args: argparse.Namespace) -> int:
     reporter = InstallReporter(progress_format=args.progress_format)
     decision = detect_install_candidates(args.profile)
-    requirements = _installed_audio_core_requirements()
+    requirements = _bundled_audio_runtime_requirements()
     report = InstallReport(
         requested_profile=args.profile,
         decision_reason=decision.reason,
@@ -618,9 +604,9 @@ def run_install_command(args: argparse.Namespace) -> int:
     )
     reporter.human(_("Python                  : {}").format(PYTHON))
     reporter.human(_("Install reason          : {}").format(decision.reason))
-    reporter.human(_("Audio core requirements : {}").format(', '.join(requirements)))
+    reporter.human(_("Audio runtime requirements : {}").format(', '.join(requirements)))
     if _env_uses_socks_proxy():
-        reporter.human(_("Proxy note              : SOCKS proxy detected in environment; install validation will require socksio/httpx[socks]"))
+        reporter.human(_("Proxy note              : SOCKS proxy detected in environment; install validation will require PySocks/requests[socks]"))
         reporter.event("install_proxy_detected", stage="install", message=_("SOCKS proxy detected in environment"))
 
     errors: list[str] = []

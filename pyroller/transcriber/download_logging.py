@@ -230,7 +230,7 @@ def snapshot_download_with_logging(
             from huggingface_hub import snapshot_download  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                _("huggingface_hub is required to materialize transcriber models from Hugging Face. Install with: pip install .[audio-core]")
+                _("huggingface_hub is required to materialize transcriber models from Hugging Face. Install or repair the audio environment with: py-roller install")
             ) from exc
 
         file_stats = _repo_file_stats_from_hub(repo_id, local_files_only=local_files_only, kwargs=kwargs)
@@ -252,7 +252,7 @@ def snapshot_download_with_logging(
                     **kwargs,
                 )
         except Exception as exc:
-            hints = huggingface_download_error_hints(exc)
+            hints = huggingface_download_error_hints(exc, config=config)
             hint_text = _(" Suggested fix: {}.").format("; ".join(hints)) if hints else ""
             raise RuntimeError(_("Hugging Face model download failed for {!r}.{}").format(repo_id, hint_text)) from exc
     if stage is not None:

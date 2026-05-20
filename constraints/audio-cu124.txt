@@ -2,4 +2,3 @@
 # Torch 2.6+ is required by the validated local transcriber stack.
 torch==2.6.0
 torchaudio==2.6.0
-torchvision==0.21.0

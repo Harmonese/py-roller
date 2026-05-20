@@ -111,7 +111,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
                 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore
             except ImportError as exc:  # pragma: no cover
                 raise RuntimeError(
-                    _("{} dependencies are not installed. Install with: pip install librosa transformers torch").format(self.backend_name)
+                    _("{} dependencies are not installed. Install or repair the audio environment with: py-roller install").format(self.backend_name)
                 ) from exc
 
             self.close()
@@ -180,7 +180,7 @@ class Wav2Vec2CTCEngine(TranscriberEngine):
             import torch  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                _("{} dependencies are not installed. Install with: pip install librosa transformers torch").format(self.backend_name)
+                _("{} dependencies are not installed. Install or repair the audio environment with: py-roller install").format(self.backend_name)
             ) from exc
 
         audio_path = Path(audio_artifact.path) if audio_artifact.path is not None else None

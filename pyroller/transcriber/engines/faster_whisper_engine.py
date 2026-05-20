@@ -120,7 +120,7 @@ class FasterWhisperEngine(TranscriberEngine):
             try:
                 from faster_whisper import WhisperModel  # type: ignore
             except ImportError as exc:  # pragma: no cover
-                raise RuntimeError(_("faster-whisper is not installed. Install with: pip install faster-whisper")) from exc
+                raise RuntimeError(_("faster-whisper is not installed. Install or repair the audio environment with: py-roller install")) from exc
 
             try:
                 from faster_whisper import BatchedInferencePipeline  # type: ignore
@@ -194,7 +194,7 @@ class FasterWhisperEngine(TranscriberEngine):
         try:
             import faster_whisper  # noqa: F401  # type: ignore
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(_("faster-whisper is not installed. Install with: pip install faster-whisper")) from exc
+            raise RuntimeError(_("faster-whisper is not installed. Install or repair the audio environment with: py-roller install")) from exc
 
         audio_path = Path(audio_artifact.path) if audio_artifact.path is not None else None
         if audio_path is None or not audio_path.exists():

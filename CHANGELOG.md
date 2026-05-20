@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.6.4] - 2026-05-21
+
+### Changed
+- Made `py-roller install` the sole supported audio runtime installation path and removed the legacy `audio-core` extra from package metadata.
+- Switched SOCKS proxy support from `httpx[socks]`/`socksio` to `requests[socks]`/`PySocks` to match Hugging Face's download stack.
+- Removed `torchvision` from the official install profiles because py-roller does not use vision workloads.
+
+### Fixed
+- Fixed Hugging Face large-file download failure hints so interrupted partial streams recommend retrying, lowering `--transcriber-hf-max-workers`, increasing HF timeouts, and checking the configured proxy.
+- Removed the unused `g2p_en` probing path so English ARPABET conversion consistently uses the declared `pronouncing` dependency and grapheme fallback.
+
 ## [0.6.3] - 2026-05-20
 
 ### Added

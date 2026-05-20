@@ -135,11 +135,11 @@ class HFDownloadConfig:
         return overrides
 
     def ensure_runtime_requirements(self) -> None:
-        if _is_socks_proxy(self.proxy) and importlib.util.find_spec("socksio") is None:
+        if _is_socks_proxy(self.proxy) and importlib.util.find_spec("socks") is None:
             raise RuntimeError(
-                _("A SOCKS proxy was configured with --transcriber-hf-proxy, but socksio is not installed. "
+                _("A SOCKS proxy was configured with --transcriber-hf-proxy, but PySocks is not installed. "
                   "Install or repair the audio environment with: py-roller install. "
-                  "Alternatively install the missing dependency with: pip install \"httpx[socks]\", "
+                  "Alternatively install the missing dependency with: pip install \"requests[socks]\", "
                   "or pass an HTTP proxy URL instead.")
             )
 
@@ -171,15 +171,43 @@ def hf_download_environment(config: HFDownloadConfig, *, local_files_only: bool)
                 os.environ[key] = old_value
 
 
-def huggingface_download_error_hints(exc: BaseException) -> list[str]:
-    text = f"{exc.__class__.__name__}: {exc}".lower()
+def _exception_chain_text(exc: BaseException) -> str:
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        parts.append(f"{current.__class__.__name__}: {current}")
+        current = current.__cause__ or current.__context__
+    return "\n".join(parts).lower()
+
+
+def huggingface_download_error_hints(exc: BaseException, config: HFDownloadConfig | None = None) -> list[str]:
+    text = _exception_chain_text(exc)
     hints: list[str] = []
+    partial_stream = any(
+        token in text
+        for token in (
+            "chunkedencodingerror",
+            "incompleteread",
+            "protocolerror",
+            "connection broken",
+            "more expected",
+            "remote end closed",
+            "connection reset",
+        )
+    )
     if any(token in text for token in ("xet", "cas", "cas-bridge", "cas-server", "hf_xet")):
         hints.append(_("try --transcriber-hf-xet off to avoid the XET/CAS download path"))
-    if "socks" in text or "socksio" in text:
-        hints.append(_("install SOCKS support with py-roller install or pip install \"httpx[socks]\""))
-    if any(token in text for token in ("timeout", "timed out", "readtimeout", "connecttimeout")):
+    if "socks" in text or "pysocks" in text:
+        hints.append(_("install SOCKS support with py-roller install or pip install \"requests[socks]\""))
+    if partial_stream:
+        hints.append(_("rerun the command; Hugging Face cache can resume partially downloaded files when possible"))
+        hints.append(_("set --transcriber-hf-max-workers 1 for fragile proxies or unstable large-file downloads"))
+    if partial_stream or any(token in text for token in ("timeout", "timed out", "readtimeout", "connecttimeout")):
         hints.append(_("increase --transcriber-hf-download-timeout and/or --transcriber-hf-etag-timeout"))
-    if any(token in text for token in ("proxy", "connection", "network is unreachable", "name resolution")):
+    if partial_stream and config is not None and config.proxy:
+        hints.append(_("verify that the configured --transcriber-hf-proxy is stable, or switch to a more reliable proxy"))
+    elif any(token in text for token in ("proxy", "connection", "network is unreachable", "name resolution")):
         hints.append(_("set --transcriber-hf-proxy to an HTTP/SOCKS proxy reachable from this machine"))
     return hints
