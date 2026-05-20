@@ -1,6 +1,6 @@
 # py-roller
 
-`py-roller` is a local command-line pipeline for generating rolling lyric files from audio and plain-text lyrics.
+`py-roller` is a composable CLI pipeline solution for automatic rolling lyrics generating.
 
 It can split vocals, filter audio, transcribe local audio with faster-whisper or wav2vec2-style backends, parse lyrics, align lyric lines, and export LRC or ASS karaoke output.
 
