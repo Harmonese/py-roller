@@ -204,11 +204,14 @@ class JsonlStageProgress(StageProgress):
         )
 
     def _emit(self, event_type: str, **payload: Any) -> None:
+        payload.setdefault("schema_version", 1)
         payload.setdefault("type", event_type)
         now = _utc_now()
         payload.setdefault("timestamp", now)
         payload.setdefault("time", now)  # compatibility alias used by early GUI builds
         payload.setdefault("stage", self.name)
+        payload.setdefault("message", "")
+        payload.setdefault("progress", None)
         if self.prefix:
             payload.setdefault("prefix", self.prefix)
         normalize_progress_payload(payload)
@@ -264,10 +267,14 @@ class JsonlProgressReporter(ProgressReporter):
         return JsonlStageProgress(name=name, total=total, unit=unit, prefix=self.prefix)
 
     def event(self, event_type: str, **payload: Any) -> None:
+        payload.setdefault("schema_version", 1)
         payload.setdefault("type", event_type)
         now = _utc_now()
         payload.setdefault("timestamp", now)
         payload.setdefault("time", now)
+        payload.setdefault("stage", "")
+        payload.setdefault("message", "")
+        payload.setdefault("progress", None)
         if self.prefix:
             payload.setdefault("prefix", self.prefix)
         normalize_progress_payload(payload)

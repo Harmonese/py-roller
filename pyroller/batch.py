@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -272,9 +273,12 @@ class ManifestBatchBuilder:
 
     def _load_entries(self) -> list[dict[str, Any]]:
         if not self.manifest_path.exists() or not self.manifest_path.is_file():
-            raise ValueError(_("Manifest path must be an existing YAML file: {}").format(self.manifest_path))
-        with self.manifest_path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle)
+            raise ValueError(_("Manifest path must be an existing JSON/YAML file: {}").format(self.manifest_path))
+        text = self.manifest_path.read_text(encoding="utf-8")
+        if self.manifest_path.suffix.lower() == ".json":
+            data = json.loads(text)
+        else:
+            data = yaml.safe_load(text)
         if data is None:
             raise ValueError(_("Manifest {} is empty.").format(self.manifest_path))
         if isinstance(data, list):
@@ -465,7 +469,7 @@ class BatchRunner:
                 worker.start()
             for task in runnable:
                 task_queue.put(task)
-            for _ in workers:
+            for _worker_sentinel in workers:
                 task_queue.put(None)
 
             pending_stems = {task.stem for task in runnable}

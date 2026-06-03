@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-roller"
-version = "0.6.4"
+version = "0.8.0"
 description = "Composable lyric-audio alignment pipeline with staged execution, batch processing, and LRC/ASS export."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -48,6 +48,12 @@ dependencies = [
   "tqdm>=4.66.0",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+  "pytest-cov>=5",
+]
+
 [project.scripts]
 py-roller = "pyroller.cli.main:main"
 
@@ -59,3 +65,15 @@ include = ["pyroller*"]
 
 [tool.setuptools.package-data]
 pyroller = ["resources/constraints/*.txt", "resources/requirements/*.txt", "resources/locales/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m 'not slow and not network and not runtime'"
+markers = [
+  "slow: slow tests that are not suitable for the default feedback loop",
+  "network: tests that require network access",
+  "runtime: tests that require the full audio/model runtime stack",
+]
+filterwarnings = [
+  "ignore:datetime\\.datetime\\.utcnow\\(\\) is deprecated.*:DeprecationWarning:dateparser\\.timezone_parser",
+]

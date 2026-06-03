@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.8.0] - 2026-06-04
+
+### Added
+- Added protocol v1 for GUI/frontends: `py-roller capabilities --output-format json`, `run --request request.json --progress-format jsonl --output-format json`, and `batch --request request.json --progress-format jsonl --output-format json`.
+- Added protocol v1 final JSON reports for run, batch, cache-model, doctor, and install flows.
+- Added protocol v1 JSONL event fields (`schema_version`, `stage`, `message`, `progress`, `timestamp`) to pipeline and install progress streams.
+- Added JSON batch manifest loading alongside existing YAML manifests.
+
+### Changed
+- Bumped package version to `0.8.0` for the new machine protocol boundary.
+- Made `--stages` optional when `run` or `batch` receives a protocol `--request` file.
+- `doctor --output-format json` and `install --output-format json` now include protocol metadata (`schema_version`, `engine`, `engine_version`, `protocol_version`, `type`, `status`).
+
 ## [0.6.4] - 2026-05-21
 
 ### Changed

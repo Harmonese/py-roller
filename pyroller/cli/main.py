@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import sys
@@ -40,7 +41,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     stages_group = parser.add_argument_group(_("stages"))
     stages_group.add_argument(
         "--stages",
-        required=True,
+        required=False,
         help=_(
             "Comma-separated contiguous stage chain in canonical order s,f,t,p,a,w "
             "(splitter, filter, transcriber, parser, aligner, writer). "
@@ -163,6 +164,18 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
             "both emits both. Default: human"
         ),
     )
+    runtime.add_argument(
+        "--request",
+        type=Path,
+        default=None,
+        help=_("Protocol v1 JSON request file for machine clients. When set, run/batch path and backend options are read from this file."),
+    )
+    runtime.add_argument(
+        "--output-format",
+        choices=["human", "json"],
+        default="human",
+        help=_("Final result output format. Use json for machine-readable protocol v1 reports. Default: human"),
+    )
 
     if batch_mode:
         batch = parser.add_argument_group(_("batch-only"))
@@ -270,6 +283,14 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
     cache_model.add_argument("--transcriber-hf-download-timeout", type=_positive_timeout_seconds_arg, default=None, help=_("Hugging Face file download timeout in seconds."))
     cache_model.add_argument("--transcriber-hf-max-workers", type=int, default=None, help=_("Maximum parallel snapshot download workers."))
     cache_model.add_argument("--progress-format", choices=["human", "jsonl", "both"], default="human", help=_("Progress output format. Default: human"))
+    cache_model.add_argument("--output-format", choices=["human", "json"], default="human", help=_("Final result output format. Default: human"))
+
+    capabilities = subparsers.add_parser(
+        "capabilities",
+        help=_("Print py-roller protocol capabilities for machine clients."),
+        formatter_class=formatter,
+    )
+    capabilities.add_argument("--output-format", choices=["json"], default="json", help=_("Capabilities output format. Default: json"))
 
     return parser, run, batch
 
@@ -386,6 +407,8 @@ def _build_backend_config(args: argparse.Namespace) -> dict[str, object]:
 def _build_request(args: argparse.Namespace):
     from pyroller.domain import PipelineRequest
 
+    if not args.stages:
+        raise ValueError(_("--stages is required unless --request is used."))
     return PipelineRequest(
         stages=_split_stages(args.stages),
         audio_path=args.audio,
@@ -471,11 +494,12 @@ def _prepare_single_run_request(request):
     run_id = make_id("run")
     return replace(request, intermediate_dir=request.intermediate_dir / run_id)
 
-def _execute_run(request, *, progress_format: str = "human") -> None:
+def _execute_run(request, *, progress_format: str = "human", output_format: str = "human") -> None:
     from pyroller.batch import batch_task_log_file
     from pyroller.logging_utils import configure_logging
     from pyroller.pipeline import ComposablePipelineRunner
     from pyroller.progress import build_cli_progress_reporter
+    from pyroller.protocol import as_jsonable, run_result_report
 
     effective_request = _prepare_single_run_request(request)
     log_file = batch_task_log_file(effective_request.intermediate_dir)
@@ -485,7 +509,10 @@ def _execute_run(request, *, progress_format: str = "human") -> None:
         result = runner.run(effective_request)
     finally:
         runner.close()
-    _print_run_summary(result, effective_request)
+    if output_format == "json":
+        print(json.dumps(run_result_report(result, effective_request), ensure_ascii=False, default=as_jsonable))
+    else:
+        _print_run_summary(result, effective_request)
 
 def _validate_batch_directory_outputs(request) -> None:
     for label, path in (
@@ -522,7 +549,22 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
     from pyroller.batch import BatchBuilder, BatchRunner, ManifestBatchBuilder
     from pyroller.logging_utils import configure_logging
     from pyroller.pipeline import ComposablePipelineRunner
+    from pyroller.protocol import as_jsonable, batch_request_from_json, batch_result_report
 
+    if args.request is not None:
+        protocol_request = batch_request_from_json(args.request)
+        request = protocol_request.request
+        options = protocol_request.options
+        args.continue_on_error = options.continue_on_error
+        args.skip_existing = options.skip_existing
+        args.jobs = options.jobs
+        args.manifest = options.manifest
+        args.pair_by = options.pair_by
+        args.audio_glob = options.audio_glob
+        args.lyrics_glob = options.lyrics_glob
+        args.timed_units_glob = options.timed_units_glob
+        args.parsed_lyrics_glob = options.parsed_lyrics_glob
+        args.alignment_result_glob = options.alignment_result_glob
     if args.jobs < 1:
         raise ValueError(_("--jobs must be at least 1."))
     configure_logging(level=request.log_level, log_file=None)
@@ -560,7 +602,10 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
         skip_existing=args.skip_existing,
         jobs=args.jobs,
     )
-    _print_batch_summary(summary)
+    if args.output_format == "json":
+        print(json.dumps(batch_result_report(summary), ensure_ascii=False, default=as_jsonable))
+    else:
+        _print_batch_summary(summary)
     return 1 if summary.failed else 0
 
 def _execute_cache_model(args: argparse.Namespace) -> int:
@@ -569,6 +614,7 @@ def _execute_cache_model(args: argparse.Namespace) -> int:
     from pyroller.transcriber.hf_download_config import HFDownloadConfig
     from pyroller.transcriber.model_resolver import TranscriberModelResolver
     from pyroller.transcriber.registry import resolve_transcriber_backend
+    from pyroller.protocol import PROTOCOL_VERSION, as_jsonable, engine_version
 
     configure_logging(level="INFO", log_file=None)
     progress = build_cli_progress_reporter(args.progress_format)
@@ -593,11 +639,26 @@ def _execute_cache_model(args: argparse.Namespace) -> int:
     plan = resolver.resolve(materialize=True, stage=stage)
     stage.phase(_("model cached"))
     stage.close(_("model download complete"))
-    print(_("[OK] model cached: {}").format(plan.effective_model_name))
-    print(_("  backend      : {}").format(plan.backend))
-    print(_("  language     : {}").format(plan.language))
-    print(_("  model dir    : {}").format(plan.resolved_model_dir))
-    print(_("  store root   : {}").format(plan.model_store_root))
+    if args.output_format == "json":
+        print(json.dumps({
+            "schema_version": PROTOCOL_VERSION,
+            "engine": "py-roller",
+            "engine_version": engine_version(),
+            "protocol_version": PROTOCOL_VERSION,
+            "type": "cache_model_result",
+            "status": "ok",
+            "backend": plan.backend,
+            "language": plan.language,
+            "effective_model_name": plan.effective_model_name,
+            "resolved_model_dir": plan.resolved_model_dir,
+            "model_store_root": plan.model_store_root,
+        }, ensure_ascii=False, default=as_jsonable))
+    else:
+        print(_("[OK] model cached: {}").format(plan.effective_model_name))
+        print(_("  backend      : {}").format(plan.backend))
+        print(_("  language     : {}").format(plan.language))
+        print(_("  model dir    : {}").format(plan.resolved_model_dir))
+        print(_("  store root   : {}").format(plan.model_store_root))
     return 0
 
 
@@ -610,6 +671,10 @@ def main() -> None:
             config = load_cli_config(config_path)
             apply_cli_config_defaults(run_parser=run_parser, batch_parser=batch_parser, config=config)
         args = parser.parse_args(raw_argv)
+        if args.command == "capabilities":
+            from pyroller.protocol import as_jsonable, capabilities
+            print(json.dumps(capabilities(), ensure_ascii=False, default=as_jsonable))
+            return
         if args.command == "doctor":
             from pyroller.cli.doctor import run_doctor
             raise SystemExit(run_doctor(output_format=args.output_format))
@@ -619,9 +684,15 @@ def main() -> None:
         if args.command == "cache-model":
             raise SystemExit(_execute_cache_model(args))
 
-        request = _build_request(args)
+        if args.command == "run" and args.request is not None:
+            from pyroller.protocol import pipeline_request_from_json
+            request = pipeline_request_from_json(args.request)
+        elif args.command == "batch" and args.request is not None:
+            request = None
+        else:
+            request = _build_request(args)
         if args.command == "run":
-            _execute_run(request, progress_format=args.progress_format)
+            _execute_run(request, progress_format=args.progress_format, output_format=args.output_format)
             return
         if args.command == "batch":
             raise SystemExit(_execute_batch(args, request))
@@ -636,6 +707,9 @@ def main() -> None:
             cli_logger.exception(_("Pipeline command failed"))
         else:
             cli_logger.error(_("Pipeline command failed: %s"), exc)
+        if "args" in locals() and getattr(args, "output_format", None) == "json":
+            from pyroller.protocol import as_jsonable, error_report
+            print(json.dumps(error_report(exc), ensure_ascii=False, default=as_jsonable))
         print(_("[ERROR] {}").format(exc), file=sys.stderr)
         raise SystemExit(1)
 

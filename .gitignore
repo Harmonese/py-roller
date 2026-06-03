@@ -5,6 +5,7 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+.coverage
 .mypy_cache/
 .DS_Store
 py-roller-artifacts/
@@ -14,5 +15,4 @@ testdata_out/
 models/
 *.pyc
 *.pyo
-tests/
 CLAUDE.md

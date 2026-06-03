@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from pyroller.i18n import _
+from pyroller.protocol import PROTOCOL_VERSION, engine_version
 from pyroller.utils.json import json_default
 
 PYTHON = sys.executable
@@ -118,6 +119,12 @@ class InstallReport:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": PROTOCOL_VERSION,
+            "engine": "py-roller",
+            "engine_version": engine_version(),
+            "protocol_version": PROTOCOL_VERSION,
+            "type": "install_result",
+            "status": "ok" if self.ok else "failed",
             "ok": self.ok,
             "command": "install",
             "requested_profile": self.requested_profile,
@@ -162,8 +169,12 @@ class InstallReporter:
     def event(self, event_type: str, **payload: Any) -> None:
         if not self.emit_jsonl:
             return
+        payload.setdefault("schema_version", PROTOCOL_VERSION)
         payload.setdefault("type", event_type)
         payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        payload.setdefault("stage", "install")
+        payload.setdefault("message", "")
+        payload.setdefault("progress", None)
         print(EVENT_PREFIX + json.dumps(payload, ensure_ascii=False, default=json_default), flush=True)
 
     def subprocess_output(self, *, step: str, line: str) -> None:

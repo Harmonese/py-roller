@@ -118,6 +118,80 @@ py-roller batch \
   --output-roller ./out_dir
 ```
 
+## Protocol v1 for GUI/frontends
+
+`py-roller` 0.8 introduces a stable local-process protocol for frontends such as Rolling Pebble. Human CLI flags remain available, but machine clients should use JSON request files, JSONL progress events, and JSON final reports.
+
+Discover the current engine contract:
+
+```bash
+py-roller capabilities --output-format json
+```
+
+Run one task through protocol v1:
+
+```bash
+py-roller run \
+  --request request.json \
+  --progress-format jsonl \
+  --output-format json
+```
+
+Run a batch through protocol v1:
+
+```bash
+py-roller batch \
+  --request batch-request.json \
+  --progress-format jsonl \
+  --output-format json
+```
+
+Minimal `request.json`:
+
+```json
+{
+  "protocol_version": 1,
+  "request": {
+    "stages": ["t", "p", "a", "w"],
+    "audio": "./vocals.wav",
+    "lyrics": "./song.txt",
+    "output_roller": "./song.lrc",
+    "intermediate": "./work",
+    "language": "zh",
+    "backend_config": {
+      "transcriber": {"backend": "faster_whisper", "model_name": "large-v2"},
+      "writer": {"backend": "lrc_ms", "spacing": "keep"}
+    }
+  }
+}
+```
+
+Minimal `batch-request.json`:
+
+```json
+{
+  "protocol_version": 1,
+  "request": {
+    "stages": ["t", "p", "a", "w"],
+    "intermediate": "./batch-work",
+    "language": "zh",
+    "backend_config": {
+      "writer": {"backend": "lrc_ms"}
+    }
+  },
+  "batch": {
+    "manifest": "./tasks.json",
+    "jobs": 1,
+    "continue_on_error": false,
+    "skip_existing": false
+  }
+}
+```
+
+`tasks.json` may be JSON or YAML and uses the same task fields as the existing manifest mode, for example `id`, `audio`, `lyrics`, and `output_roller`.
+
+Machine progress is emitted as lines prefixed with `PYROLLER_EVENT `. Protocol v1 events include `schema_version`, `type`, `stage`, `message`, `progress`, and `timestamp`; additional fields such as `task_id`, `completed`, `total`, `unit`, `detail`, `artifact_paths`, and `error` may appear by event type.
+
 ## Pipeline model
 
 `py-roller` runs a contiguous chain of stages in this fixed order:
