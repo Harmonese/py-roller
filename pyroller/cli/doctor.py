@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from pyroller.i18n import _
-from pyroller.protocol import PROTOCOL_VERSION, engine_version
 from pyroller.utils.json import json_default
 
 MIN_TORCH = (2, 6, 0)
@@ -229,17 +228,9 @@ def print_doctor_human(report: DoctorReport) -> None:
 
 
 def print_doctor_json(report: DoctorReport) -> None:
-    payload = report.to_dict()
-    payload.update(
-        {
-            "schema_version": PROTOCOL_VERSION,
-            "engine": "py-roller",
-            "engine_version": engine_version(),
-            "protocol_version": PROTOCOL_VERSION,
-            "type": "doctor_result",
-            "status": "ok" if report.ok else "failed",
-        }
-    )
+    from pyroller.engine import doctor_protocol_request
+
+    payload = doctor_protocol_request(report)
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=json_default))
 
 

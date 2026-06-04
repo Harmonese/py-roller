@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.metadata
 import re
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,24 @@ _REQUEST_ALIASES = {
     "intermediate": "intermediate_dir",
 }
 
+_OPTION_METADATA: list[dict[str, Any]] = [
+    {"name": "language", "type": "choice", "choices": LANGUAGES, "stages": STAGE_ORDER, "default": "mul"},
+    {"name": "stages", "type": "stage_chain", "choices": STAGE_ORDER, "stages": STAGE_ORDER},
+    {"name": "cleanup", "type": "choice", "choices": ["on-success", "never"], "default": "on-success"},
+    {"name": "log_level", "type": "choice", "choices": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "INFO"},
+    {"name": "splitter_backend", "type": "string", "stages": ["s"]},
+    {"name": "filter_chain", "type": "string_list", "stages": ["f"]},
+    {"name": "transcriber_backend", "type": "string", "stages": ["t"]},
+    {"name": "transcriber_device", "type": "string", "stages": ["t"]},
+    {"name": "transcriber_model_name", "type": "string", "stages": ["t"]},
+    {"name": "transcriber_model_path", "type": "path", "stages": ["t"]},
+    {"name": "transcriber_local_files_only", "type": "boolean", "stages": ["t"]},
+    {"name": "parser_lyrics_encoding", "type": "choice", "stages": ["p"]},
+    {"name": "aligner_backend", "type": "string", "stages": ["a"]},
+    {"name": "writer_backend", "type": "string", "stages": ["w"]},
+    {"name": "writer_spacing", "type": "choice", "choices": ["keep", "drop"], "stages": ["w"], "default": "keep"},
+]
+
 
 @dataclass(slots=True)
 class ProtocolBatchOptions:
@@ -66,6 +85,50 @@ class ProtocolBatchRequest:
     options: ProtocolBatchOptions = field(default_factory=ProtocolBatchOptions)
 
 
+@dataclass(slots=True)
+class ProtocolErrorDetail:
+    type: str
+    message: str
+    code: str = "engine_error"
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_exception(cls, exc: BaseException, *, code: str = "engine_error", detail: dict[str, Any] | None = None) -> "ProtocolErrorDetail":
+        return cls(
+            type=exc.__class__.__name__,
+            message=str(exc),
+            code=code,
+            detail=detail or {},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": self.type,
+            "code": self.code,
+            "message": self.message,
+        }
+        if self.detail:
+            payload["detail"] = self.detail
+        return payload
+
+
+def protocol_envelope(report_type: str, *, status: str = "ok", artifact_paths: dict[str, str] | None = None, error: ProtocolErrorDetail | dict[str, Any] | None = None, **payload: Any) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "schema_version": PROTOCOL_VERSION,
+        "engine": ENGINE_NAME,
+        "engine_version": engine_version(),
+        "protocol_version": PROTOCOL_VERSION,
+        "type": report_type,
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "artifact_paths": artifact_paths or {},
+    }
+    report.update(payload)
+    if error is not None:
+        report["error"] = error.to_dict() if isinstance(error, ProtocolErrorDetail) else error
+    return report
+
+
 def engine_version() -> str:
     source_version = _source_tree_version()
     if source_version:
@@ -85,14 +148,12 @@ def _source_tree_version() -> str | None:
 
 
 def capabilities() -> dict[str, Any]:
-    return {
-        "engine": ENGINE_NAME,
-        "engine_version": engine_version(),
-        "protocol_version": PROTOCOL_VERSION,
-        "stage_order": STAGE_ORDER,
-        "languages": LANGUAGES,
-        "profiles": ["auto", "cpu", "cu124"],
-        "commands": {
+    payload = protocol_envelope(
+        "capabilities",
+        stage_order=STAGE_ORDER,
+        languages=LANGUAGES,
+        profiles=["auto", "cpu", "cu124"],
+        commands={
             "capabilities": {"output_formats": ["json"]},
             "run": {"request": "json", "progress_formats": ["jsonl"], "output_formats": ["json"]},
             "batch": {"request": "json", "progress_formats": ["jsonl"], "output_formats": ["json"]},
@@ -100,29 +161,15 @@ def capabilities() -> dict[str, Any]:
             "install": {"progress_formats": ["jsonl"], "output_formats": ["json"]},
             "cache-model": {"progress_formats": ["jsonl"], "output_formats": ["json"]},
         },
-        "schemas": {
+        schemas={
             "request": 1,
             "event": 1,
             "result": 1,
         },
-        "options": [
-            {"name": "language", "type": "choice", "choices": LANGUAGES, "stages": STAGE_ORDER, "default": "mul"},
-            {"name": "stages", "type": "stage_chain", "choices": STAGE_ORDER, "stages": STAGE_ORDER},
-            {"name": "cleanup", "type": "choice", "choices": ["on-success", "never"], "default": "on-success"},
-            {"name": "log_level", "type": "choice", "choices": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "INFO"},
-            {"name": "splitter_backend", "type": "string", "stages": ["s"]},
-            {"name": "filter_chain", "type": "string_list", "stages": ["f"]},
-            {"name": "transcriber_backend", "type": "string", "stages": ["t"]},
-            {"name": "transcriber_device", "type": "string", "stages": ["t"]},
-            {"name": "transcriber_model_name", "type": "string", "stages": ["t"]},
-            {"name": "transcriber_model_path", "type": "path", "stages": ["t"]},
-            {"name": "transcriber_local_files_only", "type": "boolean", "stages": ["t"]},
-            {"name": "parser_lyrics_encoding", "type": "choice", "stages": ["p"]},
-            {"name": "aligner_backend", "type": "string", "stages": ["a"]},
-            {"name": "writer_backend", "type": "string", "stages": ["w"]},
-            {"name": "writer_spacing", "type": "choice", "choices": ["keep", "drop"], "stages": ["w"], "default": "keep"},
-        ],
-    }
+        options=list(_OPTION_METADATA),
+    )
+    payload.pop("artifact_paths", None)
+    return payload
 
 
 def _path_or_none(value: object) -> Path | None:
@@ -189,66 +236,62 @@ def _artifact_paths_from_request(request: PipelineRequest) -> dict[str, str]:
 
 
 def run_result_report(result: RunPipelineResult, request: PipelineRequest) -> dict[str, Any]:
-    return {
-        "schema_version": PROTOCOL_VERSION,
-        "engine": ENGINE_NAME,
-        "engine_version": engine_version(),
-        "protocol_version": PROTOCOL_VERSION,
-        "type": "run_result",
-        "status": "ok",
-        "executed_stages": result.executed_stages,
-        "artifact_paths": _artifact_paths_from_request(request),
-        "counts": {
+    return protocol_envelope(
+        "run_result",
+        artifact_paths=_artifact_paths_from_request(request),
+        executed_stages=result.executed_stages,
+        counts={
             "timed_units": len(result.transcription.units) if result.transcription is not None else None,
             "parsed_lyrics": len(result.parsed_lyrics.lines) if result.parsed_lyrics is not None else None,
             "aligned_lines": len(result.alignment.lines) if result.alignment is not None else None,
         },
-        "write_result": result.write_result.to_dict() if result.write_result is not None else None,
-    }
+        write_result=result.write_result.to_dict() if result.write_result is not None else None,
+    )
 
 
 def batch_task_result_report(item: BatchTaskResult) -> dict[str, Any]:
+    artifact_paths = getattr(item, "artifact_paths", None)
+    if not artifact_paths:
+        artifact_paths = {path.stem: str(path) for path in item.outputs}
+    error = None
+    if item.status == "failed":
+        error = {
+            "type": "BatchTaskError",
+            "code": "batch_task_failed",
+            "message": item.message,
+        }
     return {
         "index": item.index,
         "task_id": item.stem,
         "status": item.status,
         "message": item.message,
+        "artifact_paths": artifact_paths,
         "outputs": [str(path) for path in item.outputs],
         "log_file": str(item.log_file) if item.log_file is not None else None,
         "cleaned": item.cleaned,
+        "error": error,
     }
 
 
 def batch_result_report(summary: BatchRunSummary) -> dict[str, Any]:
-    return {
-        "schema_version": PROTOCOL_VERSION,
-        "engine": ENGINE_NAME,
-        "engine_version": engine_version(),
-        "protocol_version": PROTOCOL_VERSION,
-        "type": "batch_result",
-        "status": "failed" if summary.failed else "ok",
-        "total": summary.total,
-        "completed": summary.completed,
-        "failed": summary.failed,
-        "skipped": summary.skipped,
-        "aborted": summary.aborted,
-        "results": [batch_task_result_report(item) for item in summary.results],
-    }
+    return protocol_envelope(
+        "batch_result",
+        status="failed" if summary.failed else "ok",
+        total=summary.total,
+        completed=summary.completed,
+        failed=summary.failed,
+        skipped=summary.skipped,
+        aborted=summary.aborted,
+        results=[batch_task_result_report(item) for item in summary.results],
+    )
 
 
 def error_report(exc: BaseException) -> dict[str, Any]:
-    return {
-        "schema_version": PROTOCOL_VERSION,
-        "engine": ENGINE_NAME,
-        "engine_version": engine_version(),
-        "protocol_version": PROTOCOL_VERSION,
-        "type": "error",
-        "status": "failed",
-        "error": {
-            "type": exc.__class__.__name__,
-            "message": str(exc),
-        },
-    }
+    return protocol_envelope(
+        "error",
+        status="failed",
+        error=ProtocolErrorDetail.from_exception(exc),
+    )
 
 
 def as_jsonable(data: Any) -> Any:

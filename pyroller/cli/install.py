@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from pyroller.i18n import _
-from pyroller.protocol import PROTOCOL_VERSION, engine_version
+from pyroller.protocol import PROTOCOL_VERSION, protocol_envelope
 from pyroller.utils.json import json_default
 
 PYTHON = sys.executable
@@ -118,32 +118,28 @@ class InstallReport:
     completed_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": PROTOCOL_VERSION,
-            "engine": "py-roller",
-            "engine_version": engine_version(),
-            "protocol_version": PROTOCOL_VERSION,
-            "type": "install_result",
-            "status": "ok" if self.ok else "failed",
-            "ok": self.ok,
-            "command": "install",
-            "requested_profile": self.requested_profile,
-            "selected_profile": self.selected_profile,
-            "candidate_profiles": self.candidate_profiles,
-            "decision_reason": self.decision_reason,
-            "python_executable": self.python_executable,
-            "dry_run": self.dry_run,
-            "reset_torch": self.reset_torch,
-            "skip_doctor": self.skip_doctor,
-            "requirements": self.requirements,
-            "steps": [step.to_dict() for step in self.steps],
-            "validations": [validation.to_dict() for validation in self.validations],
-            "doctor": self.doctor,
-            "failed_step": self.failed_step,
-            "message": self.message,
-            "started_at": self.started_at,
-            "completed_at": self.completed_at,
-        }
+        return protocol_envelope(
+            "install_result",
+            status="ok" if self.ok else "failed",
+            ok=self.ok,
+            command="install",
+            requested_profile=self.requested_profile,
+            selected_profile=self.selected_profile,
+            candidate_profiles=self.candidate_profiles,
+            decision_reason=self.decision_reason,
+            python_executable=self.python_executable,
+            dry_run=self.dry_run,
+            reset_torch=self.reset_torch,
+            skip_doctor=self.skip_doctor,
+            requirements=self.requirements,
+            steps=[step.to_dict() for step in self.steps],
+            validations=[validation.to_dict() for validation in self.validations],
+            doctor=self.doctor,
+            failed_step=self.failed_step,
+            message=self.message,
+            started_at=self.started_at,
+            completed_at=self.completed_at,
+        )
 
 
 class InstallValidationError(RuntimeError):

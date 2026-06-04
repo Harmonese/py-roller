@@ -6,11 +6,11 @@ import logging
 import math
 import sys
 import tempfile
-from dataclasses import replace
 from pathlib import Path
 
 from pyroller.cli.config import apply_cli_config_defaults, load_cli_config, preparse_config_path
 from pyroller.i18n import _, install_argparse_i18n
+from pyroller.protocol import ProtocolBatchOptions
 
 def _default_intermediate_dir() -> Path:
     return Path(tempfile.gettempdir()) / "py-roller-artifacts"
@@ -192,7 +192,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
             "--manifest",
             type=Path,
             default=None,
-            help=_("YAML manifest with per-task input/output file paths. When used, do not also pass batch input/output directories."),
+            help=_("JSON/YAML manifest with per-task input/output file paths. When used, do not also pass batch input/output directories."),
         )
 
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
@@ -242,7 +242,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
 
     from pyroller.cli.install import build_install_parser as _build_install_parser
     install_spec = _build_install_parser()
-    install = subparsers.add_parser(
+    subparsers.add_parser(
         "install",
         help=_("Install/repair the official audio and transcriber runtime."),
         description=install_spec.description,
@@ -488,68 +488,19 @@ def _print_batch_summary(summary) -> None:
         elif item.status == "ok" and item.cleaned:
             print(_("           log           : cleaned after success"))
 
-def _prepare_single_run_request(request):
-    from pyroller.utils.ids import make_id
-
-    run_id = make_id("run")
-    return replace(request, intermediate_dir=request.intermediate_dir / run_id)
-
 def _execute_run(request, *, progress_format: str = "human", output_format: str = "human") -> None:
-    from pyroller.batch import batch_task_log_file
-    from pyroller.logging_utils import configure_logging
-    from pyroller.pipeline import ComposablePipelineRunner
-    from pyroller.progress import build_cli_progress_reporter
-    from pyroller.protocol import as_jsonable, run_result_report
+    from pyroller.engine import run_protocol_request
+    from pyroller.protocol import as_jsonable
 
-    effective_request = _prepare_single_run_request(request)
-    log_file = batch_task_log_file(effective_request.intermediate_dir)
-    configure_logging(level=effective_request.log_level, log_file=log_file)
-    runner = ComposablePipelineRunner(progress_reporter=build_cli_progress_reporter(progress_format))
-    try:
-        result = runner.run(effective_request)
-    finally:
-        runner.close()
+    engine_result = run_protocol_request(request, progress_format=progress_format)
     if output_format == "json":
-        print(json.dumps(run_result_report(result, effective_request), ensure_ascii=False, default=as_jsonable))
+        print(json.dumps(engine_result.report, ensure_ascii=False, default=as_jsonable))
     else:
-        _print_run_summary(result, effective_request)
-
-def _validate_batch_directory_outputs(request) -> None:
-    for label, path in (
-        ("--output-vocal-audio", request.output_vocal_audio_path),
-        ("--output-filtered-audio", request.output_filtered_audio_path),
-        ("--output-timed-units", request.output_timed_units_path),
-        ("--output-parsed-lyrics", request.output_parsed_lyrics_path),
-        ("--output-alignment-result", request.output_alignment_result_path),
-        ("--output-roller", request.output_roller_path),
-    ):
-        if path is not None and path.exists() and not path.is_dir():
-            raise ValueError(_("{} must be a directory in batch mode: {}").format(label, path))
-
-def _validate_manifest_batch_usage(request) -> None:
-    for label, path in (
-        ("--audio", request.audio_path),
-        ("--lyrics", request.lyrics_path),
-        ("--timed-units", request.timed_units_path),
-        ("--parsed-lyrics", request.parsed_lyrics_path),
-        ("--alignment-result", request.alignment_result_path),
-        ("--output-vocal-audio", request.output_vocal_audio_path),
-        ("--output-filtered-audio", request.output_filtered_audio_path),
-        ("--output-timed-units", request.output_timed_units_path),
-        ("--output-parsed-lyrics", request.output_parsed_lyrics_path),
-        ("--output-alignment-result", request.output_alignment_result_path),
-        ("--output-roller", request.output_roller_path),
-    ):
-        if path is not None:
-            raise ValueError(
-                _("{} cannot be used together with --manifest. Put per-task input/output paths inside the YAML manifest instead.").format(label)
-            )
+        _print_run_summary(engine_result.result, engine_result.request)
 
 def _execute_batch(args: argparse.Namespace, request) -> int:
-    from pyroller.batch import BatchBuilder, BatchRunner, ManifestBatchBuilder
-    from pyroller.logging_utils import configure_logging
-    from pyroller.pipeline import ComposablePipelineRunner
-    from pyroller.protocol import as_jsonable, batch_request_from_json, batch_result_report
+    from pyroller.engine import run_batch_protocol_request
+    from pyroller.protocol import as_jsonable, batch_request_from_json
 
     if args.request is not None:
         protocol_request = batch_request_from_json(args.request)
@@ -565,100 +516,49 @@ def _execute_batch(args: argparse.Namespace, request) -> int:
         args.timed_units_glob = options.timed_units_glob
         args.parsed_lyrics_glob = options.parsed_lyrics_glob
         args.alignment_result_glob = options.alignment_result_glob
-    if args.jobs < 1:
-        raise ValueError(_("--jobs must be at least 1."))
-    configure_logging(level=request.log_level, log_file=None)
-    if args.jobs > 2:
-        logging.getLogger("pyroller.cli").warning(
-            _("Batch parallelism jobs=%d may be memory-heavy for audio pipelines. Consider jobs<=2 for stable CPU/GPU usage."),
-            args.jobs,
-        )
-
-    if args.manifest is not None:
-        _validate_manifest_batch_usage(request)
-        tasks = ManifestBatchBuilder(args.manifest).build_tasks(request)
-    else:
-        _validate_batch_directory_outputs(request)
-        runner = ComposablePipelineRunner()
-        try:
-            stages = runner._resolve_execution_plan(request)
-            runner._validate_request(request, stages)
-        finally:
-            runner.close()
-        tasks = BatchBuilder(
-            pair_by=args.pair_by,
-            audio_glob=args.audio_glob,
-            lyrics_glob=args.lyrics_glob,
-            timed_units_glob=args.timed_units_glob,
-            parsed_lyrics_glob=args.parsed_lyrics_glob,
-            alignment_result_glob=args.alignment_result_glob,
-        ).build_tasks(request)
-
-    if not tasks:
-        raise ValueError(_("Batch mode found no runnable tasks."))
-    summary = BatchRunner().run(
-        tasks,
+    options = ProtocolBatchOptions(
         continue_on_error=args.continue_on_error,
         skip_existing=args.skip_existing,
         jobs=args.jobs,
+        manifest=args.manifest,
+        pair_by=args.pair_by,
+        audio_glob=args.audio_glob,
+        lyrics_glob=args.lyrics_glob,
+        timed_units_glob=args.timed_units_glob,
+        parsed_lyrics_glob=args.parsed_lyrics_glob,
+        alignment_result_glob=args.alignment_result_glob,
     )
+    engine_result = run_batch_protocol_request(request, options, progress_format=args.progress_format)
     if args.output_format == "json":
-        print(json.dumps(batch_result_report(summary), ensure_ascii=False, default=as_jsonable))
+        print(json.dumps(engine_result.report, ensure_ascii=False, default=as_jsonable))
     else:
-        _print_batch_summary(summary)
-    return 1 if summary.failed else 0
+        _print_batch_summary(engine_result.summary)
+    return 1 if engine_result.summary.failed else 0
 
 def _execute_cache_model(args: argparse.Namespace) -> int:
-    from pyroller.logging_utils import configure_logging
-    from pyroller.progress import build_cli_progress_reporter
-    from pyroller.transcriber.hf_download_config import HFDownloadConfig
-    from pyroller.transcriber.model_resolver import TranscriberModelResolver
-    from pyroller.transcriber.registry import resolve_transcriber_backend
-    from pyroller.protocol import PROTOCOL_VERSION, as_jsonable, engine_version
+    from pyroller.engine import cache_model_protocol_request
+    from pyroller.protocol import as_jsonable
 
-    configure_logging(level="INFO", log_file=None)
-    progress = build_cli_progress_reporter(args.progress_format)
-    language, backend = resolve_transcriber_backend(args.language, args.transcriber_backend)
-    hf_config = HFDownloadConfig(
-        xet=args.transcriber_hf_xet or "auto",
-        proxy=args.transcriber_hf_proxy,
-        etag_timeout=args.transcriber_hf_etag_timeout,
-        download_timeout=args.transcriber_hf_download_timeout,
-        max_workers=args.transcriber_hf_max_workers,
+    report = cache_model_protocol_request(
+        language=args.language,
+        transcriber_backend=args.transcriber_backend,
+        transcriber_model_name=args.transcriber_model_name,
+        transcriber_model_path=args.transcriber_model_path,
+        transcriber_hf_xet=args.transcriber_hf_xet,
+        transcriber_hf_proxy=args.transcriber_hf_proxy,
+        transcriber_hf_etag_timeout=args.transcriber_hf_etag_timeout,
+        transcriber_hf_download_timeout=args.transcriber_hf_download_timeout,
+        transcriber_hf_max_workers=args.transcriber_hf_max_workers,
+        progress_format=args.progress_format,
     )
-    resolver = TranscriberModelResolver(
-        backend=backend,
-        language=language,
-        model_name=args.transcriber_model_name,
-        model_path=args.transcriber_model_path,
-        local_files_only=False,
-        hf_download_config=hf_config,
-    )
-    stage = progress.stage("model_download", total=2, unit=_("phase"))
-    stage.phase(_("resolving model"))
-    plan = resolver.resolve(materialize=True, stage=stage)
-    stage.phase(_("model cached"))
-    stage.close(_("model download complete"))
     if args.output_format == "json":
-        print(json.dumps({
-            "schema_version": PROTOCOL_VERSION,
-            "engine": "py-roller",
-            "engine_version": engine_version(),
-            "protocol_version": PROTOCOL_VERSION,
-            "type": "cache_model_result",
-            "status": "ok",
-            "backend": plan.backend,
-            "language": plan.language,
-            "effective_model_name": plan.effective_model_name,
-            "resolved_model_dir": plan.resolved_model_dir,
-            "model_store_root": plan.model_store_root,
-        }, ensure_ascii=False, default=as_jsonable))
+        print(json.dumps(report, ensure_ascii=False, default=as_jsonable))
     else:
-        print(_("[OK] model cached: {}").format(plan.effective_model_name))
-        print(_("  backend      : {}").format(plan.backend))
-        print(_("  language     : {}").format(plan.language))
-        print(_("  model dir    : {}").format(plan.resolved_model_dir))
-        print(_("  store root   : {}").format(plan.model_store_root))
+        print(_("[OK] model cached: {}").format(report["effective_model_name"]))
+        print(_("  backend      : {}").format(report["backend"]))
+        print(_("  language     : {}").format(report["language"]))
+        print(_("  model dir    : {}").format(report["resolved_model_dir"]))
+        print(_("  store root   : {}").format(report["model_store_root"]))
     return 0
 
 

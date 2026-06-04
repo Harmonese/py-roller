@@ -5,11 +5,14 @@ from pathlib import Path
 
 from pyroller.protocol import (
     PROTOCOL_VERSION,
+    batch_result_report,
     batch_request_from_json,
     capabilities,
+    error_report,
     pipeline_request_from_dict,
     run_result_report,
 )
+from pyroller.batch import BatchRunSummary, BatchTaskResult
 from pyroller.domain import RunPipelineResult
 
 
@@ -21,6 +24,8 @@ def test_capabilities_exposes_protocol_v1_contract() -> None:
     assert payload["stage_order"] == ["s", "f", "t", "p", "a", "w"]
     assert payload["commands"]["run"]["request"] == "json"
     assert payload["schemas"] == {"request": 1, "event": 1, "result": 1}
+    assert payload["type"] == "capabilities"
+    assert payload["status"] == "ok"
 
 
 def test_pipeline_request_from_protocol_json_accepts_aliases(tmp_path: Path) -> None:
@@ -87,3 +92,43 @@ def test_run_result_report_contains_protocol_metadata(tmp_path: Path) -> None:
     assert report["type"] == "run_result"
     assert report["status"] == "ok"
     assert report["artifact_paths"]["roller"] == str(tmp_path / "out.lrc")
+    assert "timestamp" in report
+
+
+def test_batch_result_report_contains_task_artifact_paths_and_error(tmp_path: Path) -> None:
+    output = tmp_path / "bad.lrc"
+    summary = BatchRunSummary(
+        total=1,
+        completed=0,
+        failed=1,
+        skipped=0,
+        aborted=0,
+        results=[
+            BatchTaskResult(
+                index=1,
+                stem="bad",
+                status="failed",
+                message="boom",
+                outputs=[output],
+                artifact_paths={"roller": str(output)},
+                error={"type": "RuntimeError", "code": "batch_task_failed", "message": "boom"},
+            )
+        ],
+    )
+
+    report = batch_result_report(summary)
+
+    assert report["status"] == "failed"
+    assert report["artifact_paths"] == {}
+    assert report["results"][0]["task_id"] == "bad"
+    assert report["results"][0]["artifact_paths"] == {"roller": str(output)}
+    assert report["results"][0]["error"]["message"] == "boom"
+
+
+def test_error_report_uses_structured_error_detail() -> None:
+    report = error_report(ValueError("bad request"))
+
+    assert report["status"] == "failed"
+    assert report["artifact_paths"] == {}
+    assert report["error"]["type"] == "ValueError"
+    assert report["error"]["code"] == "engine_error"

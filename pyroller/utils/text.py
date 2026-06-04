@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter
-from functools import lru_cache
 from typing import Optional
 
 from pyroller.i18n import _

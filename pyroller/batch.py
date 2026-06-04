@@ -15,7 +15,7 @@ from pyroller.logging_utils import configure_logging
 from pyroller.pipeline import ComposablePipelineRunner
 from pyroller.pipeline.execution_context import PipelineExecutionContext
 from pyroller.process_control import install_worker_signal_handlers
-from pyroller.progress import LoggingProgressReporter
+from pyroller.progress import LoggingProgressReporter, ProgressReporter
 
 logger = logging.getLogger("pyroller.batch")
 
@@ -54,6 +54,8 @@ class BatchTaskResult:
     outputs: list[Path] = field(default_factory=list)
     log_file: Optional[Path] = None
     cleaned: bool = False
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    error: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -373,6 +375,18 @@ def build_expected_outputs(request: PipelineRequest) -> list[Path]:
     return outputs
 
 
+def artifact_paths_for_request(request: PipelineRequest) -> dict[str, str]:
+    paths = {
+        "vocal_audio": request.output_vocal_audio_path,
+        "filtered_audio": request.output_filtered_audio_path,
+        "timed_units": request.output_timed_units_path,
+        "parsed_lyrics": request.output_parsed_lyrics_path,
+        "alignment_result": request.output_alignment_result_path,
+        "roller": request.output_roller_path,
+    }
+    return {key: str(path) for key, path in paths.items() if path is not None}
+
+
 def _path_for_dir_output(base: Optional[Path], stem: str, suffix: str) -> Optional[Path]:
     if base is None:
         return None
@@ -402,6 +416,7 @@ def _run_single_batch_task(task: BatchTask, execution_context: PipelineExecution
             outputs=task.expected_outputs,
             log_file=None if cleaned else log_file,
             cleaned=cleaned,
+            artifact_paths=artifact_paths_for_request(task.request),
         )
     except Exception as exc:
         return BatchTaskResult(
@@ -412,6 +427,12 @@ def _run_single_batch_task(task: BatchTask, execution_context: PipelineExecution
             outputs=task.expected_outputs,
             log_file=log_file if log_file.exists() else None,
             cleaned=False,
+            artifact_paths=artifact_paths_for_request(task.request),
+            error={
+                "type": exc.__class__.__name__,
+                "code": "batch_task_failed",
+                "message": str(exc),
+            },
         )
     finally:
         if not shared_context:
@@ -439,12 +460,34 @@ class BatchRunner:
         continue_on_error: bool = False,
         skip_existing: bool = False,
         jobs: int = 1,
+        progress_reporter: ProgressReporter | None = None,
     ) -> BatchRunSummary:
         results: list[BatchTaskResult] = []
         runnable: list[BatchTask] = []
+        if progress_reporter is not None:
+            progress_reporter.event("batch_started", stage="batch", total=len(tasks), completed=0, unit="task", message=_("batch started"))
         for task in tasks:
             if skip_existing and task.expected_outputs and all(path.exists() for path in task.expected_outputs):
-                results.append(BatchTaskResult(index=task.index, stem=task.stem, status="skipped", message=_("all declared outputs already exist"), outputs=task.expected_outputs))
+                result = BatchTaskResult(
+                    index=task.index,
+                    stem=task.stem,
+                    status="skipped",
+                    message=_("all declared outputs already exist"),
+                    outputs=task.expected_outputs,
+                    artifact_paths=artifact_paths_for_request(task.request),
+                )
+                results.append(result)
+                if progress_reporter is not None:
+                    progress_reporter.event(
+                        "batch_task_skipped",
+                        stage="batch",
+                        task_id=task.stem,
+                        completed=len(results),
+                        total=len(tasks),
+                        unit="task",
+                        message=result.message,
+                        artifact_paths=result.artifact_paths,
+                    )
             else:
                 runnable.append(task)
 
@@ -452,11 +495,44 @@ class BatchRunner:
             shared_context = PipelineExecutionContext()
             try:
                 for position, task in enumerate(runnable):
+                    if progress_reporter is not None:
+                        progress_reporter.event("batch_task_started", stage="batch", task_id=task.stem, completed=len(results), total=len(tasks), unit="task", message=task.stem)
                     result = _run_single_batch_task(task, execution_context=shared_context)
                     results.append(result)
+                    if progress_reporter is not None:
+                        progress_reporter.event(
+                            "batch_task_completed" if result.status == "ok" else "batch_task_failed",
+                            stage="batch",
+                            task_id=task.stem,
+                            completed=len(results),
+                            total=len(tasks),
+                            unit="task",
+                            message=result.message,
+                            artifact_paths=result.artifact_paths,
+                            error=result.error,
+                        )
                     if result.status == "failed" and not continue_on_error:
                         for remaining in runnable[position + 1 :]:
-                            results.append(BatchTaskResult(index=remaining.index, stem=remaining.stem, status="aborted", message=_("batch stopped after earlier failure"), outputs=remaining.expected_outputs))
+                            aborted = BatchTaskResult(
+                                index=remaining.index,
+                                stem=remaining.stem,
+                                status="aborted",
+                                message=_("batch stopped after earlier failure"),
+                                outputs=remaining.expected_outputs,
+                                artifact_paths=artifact_paths_for_request(remaining.request),
+                            )
+                            results.append(aborted)
+                            if progress_reporter is not None:
+                                progress_reporter.event(
+                                    "batch_task_aborted",
+                                    stage="batch",
+                                    task_id=remaining.stem,
+                                    completed=len(results),
+                                    total=len(tasks),
+                                    unit="task",
+                                    message=aborted.message,
+                                    artifact_paths=aborted.artifact_paths,
+                                )
                         break
             finally:
                 shared_context.close()
@@ -482,6 +558,18 @@ class BatchRunner:
                         continue
                     pending_stems.remove(result.stem)
                     results.append(result)
+                    if progress_reporter is not None:
+                        progress_reporter.event(
+                            "batch_task_completed" if result.status == "ok" else "batch_task_failed",
+                            stage="batch",
+                            task_id=result.stem,
+                            completed=len(results),
+                            total=len(tasks),
+                            unit="task",
+                            message=result.message,
+                            artifact_paths=result.artifact_paths,
+                            error=result.error,
+                        )
                     if result.status == "failed" and not continue_on_error:
                         aborted = True
                         break
@@ -498,13 +586,32 @@ class BatchRunner:
                         worker.join(timeout=1)
             if aborted:
                 for task in sorted((task_by_stem[stem] for stem in pending_stems), key=lambda item: item.index):
-                    results.append(BatchTaskResult(index=task.index, stem=task.stem, status="aborted", message=_("batch stopped after earlier failure"), outputs=task.expected_outputs))
+                    result = BatchTaskResult(
+                        index=task.index,
+                        stem=task.stem,
+                        status="aborted",
+                        message=_("batch stopped after earlier failure"),
+                        outputs=task.expected_outputs,
+                        artifact_paths=artifact_paths_for_request(task.request),
+                    )
+                    results.append(result)
+                    if progress_reporter is not None:
+                        progress_reporter.event(
+                            "batch_task_aborted",
+                            stage="batch",
+                            task_id=task.stem,
+                            completed=len(results),
+                            total=len(tasks),
+                            unit="task",
+                            message=result.message,
+                            artifact_paths=result.artifact_paths,
+                        )
 
         completed = sum(1 for item in results if item.status == "ok")
         failed = sum(1 for item in results if item.status == "failed")
         skipped = sum(1 for item in results if item.status == "skipped")
         aborted_count = sum(1 for item in results if item.status == "aborted")
-        return BatchRunSummary(
+        summary = BatchRunSummary(
             total=len(tasks),
             completed=completed,
             failed=failed,
@@ -512,3 +619,15 @@ class BatchRunner:
             aborted=aborted_count,
             results=sorted(results, key=lambda item: item.index),
         )
+        if progress_reporter is not None:
+            progress_reporter.event(
+                "batch_completed" if failed == 0 else "batch_failed",
+                stage="batch",
+                completed=completed + skipped + aborted_count + failed,
+                total=len(tasks),
+                unit="task",
+                progress=1.0,
+                message=_("batch complete") if failed == 0 else _("batch finished with failures"),
+                failed=failed > 0,
+            )
+        return summary

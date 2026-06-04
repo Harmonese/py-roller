@@ -57,14 +57,14 @@ def _get_spec(language: str, backend_name: str | None) -> tuple[str, str, Transc
 
 
 def get_transcriber_requirements(backend_name: str) -> tuple[str, ...]:
-    for (_, spec_backend), spec in TRANSCRIBER_SPECS.items():
+    for (_language, spec_backend), spec in TRANSCRIBER_SPECS.items():
         if spec_backend == backend_name:
             return spec.requirements
     return ()
 
 
 def get_transcriber_config_keys(backend_name: str) -> frozenset[str]:
-    return next((spec.config_keys for (_, spec_backend), spec in TRANSCRIBER_SPECS.items() if spec_backend == backend_name), frozenset())
+    return next((spec.config_keys for (_language, spec_backend), spec in TRANSCRIBER_SPECS.items() if spec_backend == backend_name), frozenset())
 
 
 def sanitize_transcriber_config(backend_name: str, config: dict[str, Any] | None) -> dict[str, Any]:

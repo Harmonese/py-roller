@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from pyroller.i18n import _
-
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from pyroller.utils.json import read_json, write_artifact_json
+from pyroller.utils.json import read_json, validate_artifact_json, write_artifact_json
 
 
 @dataclass(slots=True)
@@ -183,10 +181,8 @@ class TranscriptionResult:
     @classmethod
     def load(cls, path: Path) -> "TranscriptionResult":
         data = read_json(path)
-        artifact_type = data.get("artifact_type")
-        if artifact_type != cls.artifact_type:
-            raise ValueError(_("Expected artifact_type={!r}, got {!r} from {}").format(cls.artifact_type, artifact_type, path))
-        return cls.from_dict(data["payload"])
+        payload = validate_artifact_json(data, expected_type=cls.artifact_type, path=path)
+        return cls.from_dict(payload)
 
 
 @dataclass(slots=True)
@@ -224,10 +220,8 @@ class ParsedLyrics:
     @classmethod
     def load(cls, path: Path) -> "ParsedLyrics":
         data = read_json(path)
-        artifact_type = data.get("artifact_type")
-        if artifact_type != cls.artifact_type:
-            raise ValueError(_("Expected artifact_type={!r}, got {!r} from {}").format(cls.artifact_type, artifact_type, path))
-        return cls.from_dict(data["payload"])
+        payload = validate_artifact_json(data, expected_type=cls.artifact_type, path=path)
+        return cls.from_dict(payload)
 
 
 @dataclass(slots=True)
@@ -304,10 +298,8 @@ class AlignmentResult:
     @classmethod
     def load(cls, path: Path) -> "AlignmentResult":
         data = read_json(path)
-        artifact_type = data.get("artifact_type")
-        if artifact_type != cls.artifact_type:
-            raise ValueError(_("Expected artifact_type={!r}, got {!r} from {}").format(cls.artifact_type, artifact_type, path))
-        return cls.from_dict(data["payload"])
+        payload = validate_artifact_json(data, expected_type=cls.artifact_type, path=path)
+        return cls.from_dict(payload)
 
 
 @dataclass(slots=True)
