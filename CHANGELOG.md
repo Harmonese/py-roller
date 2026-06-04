@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.8.1] - 2026-06-04
+
+### Added
+- Added `pyroller.engine` as the internal protocol execution boundary for run, batch, cache-model, and doctor flows.
+- Added unified protocol v1 final report envelopes for machine outputs, including `schema_version`, `engine`, `engine_version`, `protocol_version`, `type`, `status`, `artifact_paths`, and structured `error` data when present.
+- Added batch task protocol results with stable `task_id`, `status`, `artifact_paths`, `log_file`, and `error` fields.
+- Added artifact schema validation errors for loading timed units, parsed lyrics, and alignment artifacts.
+
+### Changed
+- Moved machine execution out of the CLI layer so `pyroller.cli.main` mainly parses arguments, reads requests, and prints reports.
+- Improved `cache-model`, `doctor`, and `install` JSON reports to share the same protocol envelope shape as run and batch.
+- Improved batch progress events with batch-level and task-level protocol event data.
+
 ## [0.8.0] - 2026-06-04
 
 ### Added

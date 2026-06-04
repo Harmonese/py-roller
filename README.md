@@ -192,6 +192,8 @@ Minimal `batch-request.json`:
 
 Machine progress is emitted as lines prefixed with `PYROLLER_EVENT `. Protocol v1 events include `schema_version`, `type`, `stage`, `message`, `progress`, and `timestamp`; additional fields such as `task_id`, `completed`, `total`, `unit`, `detail`, `artifact_paths`, and `error` may appear by event type.
 
+Machine final reports are printed as JSON when `--output-format json` is used. `run`, `batch`, `cache-model`, `doctor`, and `install` all use the same protocol v1 envelope fields: `schema_version`, `engine`, `engine_version`, `protocol_version`, `type`, `status`, `artifact_paths`, and optional `error`. Batch reports include one result object per task with stable `task_id`, `status`, `artifact_paths`, `log_file`, and `error` fields so frontends do not need to infer output paths from py-roller internals.
+
 ## Pipeline model
 
 `py-roller` runs a contiguous chain of stages in this fixed order:
