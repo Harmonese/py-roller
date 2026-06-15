@@ -125,6 +125,28 @@ def test_batch_result_report_contains_task_artifact_paths_and_error(tmp_path: Pa
     assert report["results"][0]["error"]["message"] == "boom"
 
 
+def test_protocol_result_envelope_keeps_stable_fields(tmp_path: Path) -> None:
+    request = pipeline_request_from_dict(
+        {
+            "protocol_version": 1,
+            "request": {
+                "stages": ["w"],
+                "alignment_result": str(tmp_path / "alignment.json"),
+                "output_roller": str(tmp_path / "out.lrc"),
+            },
+        }
+    )
+
+    report = run_result_report(RunPipelineResult(executed_stages=["writer"]), request)
+
+    assert report["schema_version"] == 1
+    assert report["protocol_version"] == 1
+    assert report["engine"] == "py-roller"
+    assert report["type"] == "run_result"
+    assert report["status"] == "ok"
+    assert report["artifact_paths"]["roller"] == str(tmp_path / "out.lrc")
+
+
 def test_error_report_uses_structured_error_detail() -> None:
     report = error_report(ValueError("bad request"))
 

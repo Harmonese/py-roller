@@ -5,8 +5,9 @@ import types
 
 import pytest
 
-import pyroller.cli.doctor as doctor
-from pyroller.cli.doctor import CheckResult, DoctorReport
+import pyroller.doctor as doctor
+import pyroller.cli.doctor as doctor_cli
+from pyroller.doctor import CheckResult, DoctorReport
 
 
 def test_check_result_dict_omits_empty_optional_fields() -> None:
@@ -112,7 +113,7 @@ def test_print_doctor_json_outputs_machine_readable_payload(capsys) -> None:
         checks=[CheckResult("python", "ok", "ready")],
     )
 
-    doctor.print_doctor_json(report)
+    doctor_cli.print_doctor_json(report)
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
@@ -121,7 +122,7 @@ def test_print_doctor_json_outputs_machine_readable_payload(capsys) -> None:
 
 def test_run_doctor_returns_nonzero_for_unhealthy_report(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
-        doctor,
+        doctor_cli,
         "build_doctor_report",
         lambda: DoctorReport(
             ok=False,
@@ -134,5 +135,5 @@ def test_run_doctor_returns_nonzero_for_unhealthy_report(monkeypatch, capsys) ->
         ),
     )
 
-    assert doctor.run_doctor(output_format="human") == 1
+    assert doctor_cli.run_doctor(output_format="human") == 1
     assert "py-roller install" in capsys.readouterr().out

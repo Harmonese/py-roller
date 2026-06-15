@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pyroller.batch as batch
+import pyroller.batch_runner as batch_runner
 from pyroller.batch import BatchRunner, BatchTask, BatchTaskResult
 from pyroller.domain import PipelineRequest
 
@@ -55,7 +55,7 @@ def test_batch_runner_emits_protocol_task_events(monkeypatch, tmp_path) -> None:
             artifact_paths={"roller": str(output)},
         )
 
-    monkeypatch.setattr(batch, "_run_single_batch_task", fake_run_single)
+    monkeypatch.setattr(batch_runner, "_run_single_batch_task", fake_run_single)
 
     summary = BatchRunner().run([task], progress_reporter=progress)
 
@@ -78,7 +78,7 @@ def test_batch_runner_aborts_remaining_tasks_after_first_failure(monkeypatch, tm
             return BatchTaskResult(task.index, task.stem, "failed", "boom", task.expected_outputs)
         return BatchTaskResult(task.index, task.stem, "ok", "completed", task.expected_outputs)
 
-    monkeypatch.setattr(batch, "_run_single_batch_task", fake_run_single)
+    monkeypatch.setattr(batch_runner, "_run_single_batch_task", fake_run_single)
 
     summary = BatchRunner().run(tasks, continue_on_error=False)
 
@@ -94,7 +94,7 @@ def test_batch_runner_continues_after_failure_when_requested(monkeypatch, tmp_pa
         status = "failed" if task.stem == "one" else "ok"
         return BatchTaskResult(task.index, task.stem, status, status, task.expected_outputs)
 
-    monkeypatch.setattr(batch, "_run_single_batch_task", fake_run_single)
+    monkeypatch.setattr(batch_runner, "_run_single_batch_task", fake_run_single)
 
     summary = BatchRunner().run(tasks, continue_on_error=True)
 
@@ -108,7 +108,7 @@ def test_batch_runner_sorts_results_by_original_index(monkeypatch, tmp_path) -> 
     tasks = [_task(2, "two", tmp_path), _task(1, "one", tmp_path)]
 
     monkeypatch.setattr(
-        batch,
+        batch_runner,
         "_run_single_batch_task",
         lambda task, execution_context=None: BatchTaskResult(task.index, task.stem, "ok", "completed", task.expected_outputs),
     )
@@ -134,10 +134,10 @@ def test_run_single_batch_task_returns_failed_result_and_log_path(monkeypatch, t
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(batch, "configure_logging", lambda *args, **kwargs: None)
-    monkeypatch.setattr(batch, "ComposablePipelineRunner", FailingRunner)
+    monkeypatch.setattr(batch_runner, "configure_logging", lambda *args, **kwargs: None)
+    monkeypatch.setattr(batch_runner, "ComposablePipelineRunner", FailingRunner)
 
-    result = batch._run_single_batch_task(task)
+    result = batch_runner._run_single_batch_task(task)
 
     assert result.status == "failed"
     assert result.message == "pipeline failed"
@@ -158,10 +158,10 @@ def test_run_single_batch_task_closes_owned_runner(monkeypatch, tmp_path) -> Non
         def close(self) -> None:
             closed.append(True)
 
-    monkeypatch.setattr(batch, "configure_logging", lambda *args, **kwargs: None)
-    monkeypatch.setattr(batch, "ComposablePipelineRunner", SuccessfulRunner)
+    monkeypatch.setattr(batch_runner, "configure_logging", lambda *args, **kwargs: None)
+    monkeypatch.setattr(batch_runner, "ComposablePipelineRunner", SuccessfulRunner)
 
-    result = batch._run_single_batch_task(task, execution_context=None)
+    result = batch_runner._run_single_batch_task(task, execution_context=None)
 
     assert result.status == "ok"
     assert result.cleaned is True

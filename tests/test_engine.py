@@ -1,4 +1,4 @@
-from pyroller.cli.doctor import DoctorReport
+from pyroller.doctor import DoctorReport
 from pyroller.engine import doctor_protocol_request
 
 

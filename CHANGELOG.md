@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.8.2] - 2026-06-15
+
+### Changed
+- Split CLI run-like execution into `pyroller.cli.runlike` so `pyroller.cli.main` stays focused on parser construction and command dispatch.
+- Moved reusable doctor report collection to `pyroller.doctor`; the CLI doctor module now only renders and exits.
+- Split batch internals into `batch_models`, `batch_builder`, and `batch_runner` while keeping `pyroller.batch` as the stable public facade for existing imports.
+- Added public pipeline stage resolution and request validation helpers in `pyroller.pipeline.stages` and `pyroller.pipeline.validation`.
+- Reused shared artifact-path helpers for both batch results and protocol run reports.
+- Updated CLI help and README wording to describe JSON/YAML batch manifests consistently.
+
+### Fixed
+- Fixed duplicate `continue_on_error` argument wiring in batch execution.
+- Invalid pipeline languages now fail explicitly instead of logging and falling back to `mul`; users can still choose `mul` intentionally.
+
 ## [0.8.1] - 2026-06-04
 
 ### Added

@@ -120,7 +120,7 @@ py-roller batch \
 
 ## Protocol v1 for GUI/frontends
 
-`py-roller` 0.8 introduces a stable local-process protocol for frontends such as Rolling Pebble. Human CLI flags remain available, but machine clients should use JSON request files, JSONL progress events, and JSON final reports.
+`py-roller` 0.8.x provides a stable local-process protocol for frontends such as Rolling Pebble. Human CLI flags remain available, but machine clients should use JSON request files, JSONL progress events, and JSON final reports.
 
 Discover the current engine contract:
 
@@ -517,20 +517,33 @@ py-roller batch \
 - `--jobs N`: maximum number of parallel workers.
 - `--continue-on-error`: keep processing remaining tasks after failures.
 - `--skip-existing`: skip tasks whose declared final outputs already exist.
-- `--manifest jobs.yaml`: load explicit per-task paths from YAML instead of pairing by stem.
+- `--manifest jobs.json` or `--manifest jobs.yaml`: load explicit per-task paths from JSON/YAML instead of pairing by stem.
 
 Parallelism guidance:
 
 - CPU-only: start with `--jobs 1` or `--jobs 2`.
 - Single GPU: usually start with `--jobs 1`.
 
-### YAML manifest format
+### JSON/YAML manifest format
 
 Manifest mode is useful when filenames do not match cleanly by stem.
 
 The manifest defines per-task input and output paths only. It does not override stage selection, language, backend choice, filter settings, jobs, or other batch-level options.
 
-Supported top-level forms:
+Supported top-level forms are the same in JSON and YAML:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "song01",
+      "audio": "./audio/song01_master.mp3",
+      "lyrics": "./lyrics/song01_final.txt",
+      "output_roller": "./out/song01.lrc"
+    }
+  ]
+}
+```
 
 ```yaml
 tasks:

@@ -5,17 +5,14 @@ from dataclasses import replace
 import pytest
 
 from pyroller.domain import PipelineRequest
-from pyroller.pipeline import ComposablePipelineRunner
+from pyroller.pipeline.stages import resolve_execution_plan
+from pyroller.pipeline.validation import validate_pipeline_request
 
 
 def _validate(request: PipelineRequest) -> list[str]:
-    runner = ComposablePipelineRunner()
-    try:
-        stages = runner._resolve_execution_plan(request)
-        runner._validate_request(request, stages)
-        return stages
-    finally:
-        runner.close()
+    stages = resolve_execution_plan(request)
+    validate_pipeline_request(request, stages)
+    return stages
 
 
 @pytest.mark.parametrize(
@@ -98,4 +95,16 @@ def test_ass_karaoke_tag_option_requires_ass_writer(base_request: PipelineReques
     )
 
     with pytest.raises(ValueError, match="ass_karaoke"):
+        _validate(request)
+
+
+def test_invalid_language_is_rejected(base_request: PipelineRequest) -> None:
+    request = replace(
+        base_request,
+        stages=["w"],
+        language="zz",
+        alignment_result_path=base_request.intermediate_dir / "alignment.json",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported language"):
         _validate(request)

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pyroller.batch import BatchRunSummary, BatchTaskResult
+from pyroller.batch import BatchRunSummary, BatchTaskResult, artifact_paths_for_request
 from pyroller.domain import PipelineRequest, RunPipelineResult
 from pyroller.utils.json import read_json
 
@@ -223,22 +223,10 @@ def batch_request_from_json(path: Path) -> ProtocolBatchRequest:
     return ProtocolBatchRequest(request=request, options=ProtocolBatchOptions(**options_data))
 
 
-def _artifact_paths_from_request(request: PipelineRequest) -> dict[str, str]:
-    paths = {
-        "vocal_audio": request.output_vocal_audio_path,
-        "filtered_audio": request.output_filtered_audio_path,
-        "timed_units": request.output_timed_units_path,
-        "parsed_lyrics": request.output_parsed_lyrics_path,
-        "alignment_result": request.output_alignment_result_path,
-        "roller": request.output_roller_path,
-    }
-    return {key: str(path) for key, path in paths.items() if path is not None}
-
-
 def run_result_report(result: RunPipelineResult, request: PipelineRequest) -> dict[str, Any]:
     return protocol_envelope(
         "run_result",
-        artifact_paths=_artifact_paths_from_request(request),
+        artifact_paths=artifact_paths_for_request(request),
         executed_stages=result.executed_stages,
         counts={
             "timed_units": len(result.transcription.units) if result.transcription is not None else None,

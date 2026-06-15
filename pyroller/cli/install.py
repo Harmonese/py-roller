@@ -695,7 +695,8 @@ def run_install_command(args: argparse.Namespace) -> int:
                 reporter.human(_("Validation succeeded for profile {name}: {msg}").format(name=profile.name, msg=validation.message))
                 if not args.skip_doctor:
                     reporter.event("install_doctor_started", stage="install", profile=profile.name)
-                    from pyroller.cli.doctor import build_doctor_report, print_doctor_human
+                    from pyroller.cli.doctor import print_doctor_human
+                    from pyroller.doctor import build_doctor_report
 
                     doctor_report = build_doctor_report()
                     report.doctor = doctor_report.to_dict()

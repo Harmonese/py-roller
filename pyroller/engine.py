@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from pyroller.batch import BatchBuilder, BatchRunner, ManifestBatchBuilder, batch_task_log_file
+from pyroller.doctor import build_doctor_report
 from pyroller.domain import PipelineRequest, RunPipelineResult
 from pyroller.i18n import _
 from pyroller.logging_utils import configure_logging
@@ -17,6 +18,8 @@ from pyroller.protocol import (
     protocol_envelope,
     run_result_report,
 )
+from pyroller.pipeline.stages import resolve_execution_plan
+from pyroller.pipeline.validation import validate_pipeline_request
 from pyroller.transcriber.hf_download_config import HFDownloadConfig
 from pyroller.transcriber.model_resolver import TranscriberModelResolver
 from pyroller.transcriber.registry import resolve_transcriber_backend
@@ -115,12 +118,8 @@ def run_batch_protocol_request(
         tasks = ManifestBatchBuilder(options.manifest).build_tasks(request)
     else:
         validate_batch_directory_outputs(request)
-        runner = ComposablePipelineRunner()
-        try:
-            stages = runner._resolve_execution_plan(request)
-            runner._validate_request(request, stages)
-        finally:
-            runner.close()
+        stages = resolve_execution_plan(request)
+        validate_pipeline_request(request, stages)
         tasks = BatchBuilder(
             pair_by=options.pair_by,
             audio_glob=options.audio_glob,
@@ -191,8 +190,6 @@ def cache_model_protocol_request(
 
 
 def doctor_protocol_request(report: Any | None = None) -> dict[str, Any]:
-    from pyroller.cli.doctor import build_doctor_report
-
     report = report or build_doctor_report()
     return protocol_envelope(
         "doctor_result",
