@@ -33,7 +33,7 @@ EVENT_PREFIX = "PYROLLER_EVENT "
 class InstallProfile:
     name: str
     label: str
-    index_url: str
+    index_url: str | None
     constraint_resource: str
     torch_packages: tuple[str, ...]
 
@@ -324,6 +324,14 @@ def detect_install_candidates(requested_profile: str) -> ProfileDecision:
     return ProfileDecision((PROFILES["cpu"],), _("no validated NVIDIA runtime detected; selecting CPU profile"))
 
 
+def _torch_index_url(profile: InstallProfile) -> str | None:
+    if profile.name != "cpu":
+        return profile.index_url
+    if platform.system() == "Linux":
+        return profile.index_url
+    return None
+
+
 def _materialize_resource(package: str, resource_name: str, *, subdir: str) -> Path:
     data = resources.files(package).joinpath(resource_name).read_text(encoding="utf-8")
     tmpdir = Path(tempfile.gettempdir()) / "py-roller-install" / subdir
@@ -515,9 +523,14 @@ def _install_profile_packages(
     results.append(_run([PYTHON, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], step="upgrade_packaging_tools", dry_run=dry_run, reporter=reporter))
     if reset_torch:
         results.append(_run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchaudio"], step="uninstall_existing_torch", dry_run=dry_run, reporter=reporter))
+    torch_command = [PYTHON, "-m", "pip", "install", "--force-reinstall"]
+    index_url = _torch_index_url(profile)
+    if index_url:
+        torch_command.extend(["--index-url", index_url])
+    torch_command.extend(profile.torch_packages)
     results.append(
         _run(
-            [PYTHON, "-m", "pip", "install", "--force-reinstall", "--index-url", profile.index_url, *profile.torch_packages],
+            torch_command,
             step="install_torch_stack",
             dry_run=dry_run,
             reporter=reporter,

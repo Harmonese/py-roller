@@ -229,6 +229,54 @@ def test_install_profile_packages_builds_expected_dry_run_steps(tmp_path) -> Non
     assert steps[2].command[-2:] == ["torch==1", "torchaudio==1"]
 
 
+def test_install_profile_packages_uses_default_pypi_for_non_linux_cpu_torch(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(install.platform, "system", lambda: "Darwin")
+    reporter = InstallReporter(progress_format="human")
+
+    steps = install._install_profile_packages(
+        install.PROFILES["cpu"],
+        constraints_path=tmp_path / "constraints.txt",
+        requirements=["demucs==1"],
+        reset_torch=False,
+        dry_run=True,
+        reporter=reporter,
+    )
+
+    assert "--index-url" not in steps[1].command
+
+
+def test_install_profile_packages_keeps_linux_cpu_torch_index(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(install.platform, "system", lambda: "Linux")
+    reporter = InstallReporter(progress_format="human")
+
+    steps = install._install_profile_packages(
+        install.PROFILES["cpu"],
+        constraints_path=tmp_path / "constraints.txt",
+        requirements=["demucs==1"],
+        reset_torch=False,
+        dry_run=True,
+        reporter=reporter,
+    )
+
+    assert "https://download.pytorch.org/whl/cpu" in steps[1].command
+
+
+def test_install_profile_packages_keeps_cuda_torch_index(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(install.platform, "system", lambda: "Darwin")
+    reporter = InstallReporter(progress_format="human")
+
+    steps = install._install_profile_packages(
+        install.PROFILES["cu124"],
+        constraints_path=tmp_path / "constraints.txt",
+        requirements=["demucs==1"],
+        reset_torch=False,
+        dry_run=True,
+        reporter=reporter,
+    )
+
+    assert "https://download.pytorch.org/whl/cu124" in steps[1].command
+
+
 def test_run_install_command_dry_run_json_without_doctor(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         install,

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [0.8.3] - 2026-06-16
+
+### Fixed
+- Fixed `py-roller install --profile cpu` on macOS and Windows by installing the CPU Torch/TorchAudio stack from the default PyPI index. Linux CPU installs continue to use the official PyTorch CPU wheel index, and CUDA installs continue to use the CUDA 12.4 wheel index.
+
 ## [0.8.2] - 2026-06-15
 
 ### Changed

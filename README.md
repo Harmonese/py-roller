@@ -28,7 +28,7 @@ py-roller doctor
 Install profiles:
 
 - `auto` default: try the best validated profile for this machine, then fall back to CPU if validation fails.
-- `cpu`: force the CPU-only profile.
+- `cpu`: force the CPU-only profile. On Linux this uses the official PyTorch CPU wheel index; on macOS and Windows it uses the default PyPI index where the official CPU wheels are published.
 - `cu124`: force the CUDA 12.4 profile.
 
 Useful install commands:
@@ -777,6 +777,7 @@ ps -ef | grep -E 'pyroller|demucs'
 `py-roller install` prefers the newest validated dependency line for this release:
 
 - Torch/TorchAudio are installed from the official 2.6.0 family for every built-in profile.
+- CPU installs use the official PyTorch CPU wheel index on Linux and the default PyPI index on macOS/Windows.
 - SOCKS proxy support is installed by default through `requests[socks]`, so Hugging Face downloads do not fail merely because PySocks is missing.
 
 If you upgrade or override audio/transcriber packages manually, run `py-roller doctor` before using transcription-heavy pipelines.
