@@ -27,22 +27,11 @@ def split_csv(value: object) -> list[str]:
     return [str(value).strip()] if str(value).strip() else []
 
 
-def auto_detect_transcriber_device() -> tuple[str | None, str | None]:
-    """Return (device, compute_type) if a CUDA GPU is available, otherwise (None, None)."""
-    try:
-        import torch
-    except ImportError:
-        return None, None
-    try:
-        if torch.cuda.is_available():
-            return "cuda", "float16"
-    except Exception:
-        pass
-    return None, None
+from pyroller.transcriber.device import auto_detect_transcriber_device
 
 
 def build_backend_config(args: argparse.Namespace) -> dict[str, object]:
-    splitter_cfg: dict[str, object] = {"two_stems": "vocals"}
+    splitter_cfg: dict[str, object] = {}
     if args.splitter_backend is not None:
         splitter_cfg["backend"] = args.splitter_backend
     if args.splitter_demucs_model is not None:
@@ -59,6 +48,9 @@ def build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     filter_cfg: dict[str, object] = {}
     if args.filter_chain is not None:
         filter_cfg["chain"] = split_csv(args.filter_chain)
+
+    if getattr(args, "filter_steps", None) is not None:
+        filter_cfg["steps"] = args.filter_steps
 
     transcriber_cfg: dict[str, object] = {}
     if args.transcriber_backend is not None:
@@ -88,13 +80,6 @@ def build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     if args.transcriber_vad_filter is not None:
         transcriber_cfg["vad_filter"] = args.transcriber_vad_filter
 
-    if transcriber_cfg.get("device") is None:
-        auto_device, auto_compute = auto_detect_transcriber_device()
-        if auto_device is not None:
-            transcriber_cfg["device"] = auto_device
-            if transcriber_cfg.get("compute_type") is None:
-                transcriber_cfg["compute_type"] = auto_compute
-
     aligner_cfg: dict[str, object] = {}
     if args.aligner_backend is not None:
         aligner_cfg["backend"] = args.aligner_backend
@@ -103,7 +88,9 @@ def build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     if args.aligner_repetition is not None:
         aligner_cfg["repetition"] = args.aligner_repetition
 
-    writer_cfg: dict[str, object] = {"spacing": args.writer_spacing or "keep"}
+    writer_cfg: dict[str, object] = {}
+    if args.writer_spacing is not None:
+        writer_cfg["spacing"] = args.writer_spacing
     if args.writer_backend is not None:
         writer_cfg["backend"] = args.writer_backend
     if args.writer_by_tag is not None:
@@ -111,13 +98,15 @@ def build_backend_config(args: argparse.Namespace) -> dict[str, object]:
     if args.writer_ass_karaoke_tag_type is not None:
         writer_cfg["tag_type"] = args.writer_ass_karaoke_tag_type
 
+    from pyroller.config_contracts import QUALITY_OPTIONS
     return {
         "splitter": splitter_cfg,
         "filter": filter_cfg,
-        "parser": {},
+        "parser": {key: value for key, value in {"backend": getattr(args, "parser_backend", None), "latin_language": getattr(args, "latin_language", None)}.items() if value is not None},
         "transcriber": transcriber_cfg,
         "aligner": aligner_cfg,
         "writer": writer_cfg,
+        "quality": {key: getattr(args, "quality_" + key, rule["default"]) for key, rule in QUALITY_OPTIONS.items()},
     }
 
 

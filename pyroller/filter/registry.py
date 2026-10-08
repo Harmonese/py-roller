@@ -33,7 +33,13 @@ def build_filter_chain(
     output_dir: Path,
     config: dict[str, Any] | None = None,
 ) -> FilterChain:
-    del config
+    config = dict(config or {})
+    unknown = set(config) - {"chain", "steps"}
+    if unknown:
+        raise ValueError(f"Unknown filter configuration: {sorted(unknown)}")
+    steps = config.get("steps", {})
+    if not isinstance(steps, dict) or set(steps) - set(chain_names or []):
+        raise ValueError("filter.steps must configure selected filter names")
     filters: list[AudioFilter] = []
     for name in list(chain_names or []):
         try:
@@ -41,5 +47,13 @@ def build_filter_chain(
         except KeyError as exc:
             available = ", ".join(list_available_filter_backends()) or "<none registered yet>"
             raise ValueError(_("Unsupported filter step {!r}. Available filter steps: {}").format(name, available)) from exc
-        filters.append(factory())
+        import inspect
+        params = steps.get(name, {})
+        if not isinstance(params, dict):
+            raise ValueError(f"Filter configuration for {name} must be an object")
+        accepted = {key for key, parameter in inspect.signature(factory).parameters.items()
+                    if parameter.kind != inspect.Parameter.VAR_KEYWORD}
+        if set(params) - accepted:
+            raise ValueError(f"Unknown {name} options: {sorted(set(params) - accepted)}")
+        filters.append(factory(**params))
     return FilterChain(filters=filters, output_dir=output_dir)

@@ -46,3 +46,10 @@ def configure_logging(level: str = "INFO", log_file: Optional[Path] = None) -> O
         }
     )
     return resolved_log_file
+
+
+def close_log_file(path: Path) -> None:
+    for handler in list(logging.getLogger().handlers):
+        if isinstance(handler, logging.FileHandler) and Path(handler.baseFilename).resolve() == path.resolve():
+            logging.getLogger().removeHandler(handler)
+            handler.close()

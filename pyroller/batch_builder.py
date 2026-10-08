@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -171,7 +172,7 @@ class BatchBuilder:
         parsed_lyrics_path: Optional[Path] = None,
         alignment_result_path: Optional[Path] = None,
     ) -> BatchTask:
-        task_intermediate = request.intermediate_dir / stem
+        task_intermediate = request.intermediate_dir
         task_request = PipelineRequest(
             stages=list(request.stages),
             audio_path=audio_path,
@@ -274,7 +275,7 @@ class ManifestBatchBuilder:
             parsed_lyrics_path=self._path_value(entry, "parsed_lyrics"),
             alignment_result_path=self._path_value(entry, "alignment_result"),
             language=request.language,
-            intermediate_dir=request.intermediate_dir / stem,
+            intermediate_dir=request.intermediate_dir,
             cleanup=request.cleanup,
             output_vocal_audio_path=self._path_value(entry, "output_vocal_audio"),
             output_filtered_audio_path=self._path_value(entry, "output_filtered_audio"),
@@ -294,6 +295,8 @@ class ManifestBatchBuilder:
         if explicit is not None:
             stem = str(explicit).strip()
             if stem:
+                if stem in {".", ".."} or re.search(r'[\\/:\x00-\x1f]', stem) or stem.endswith((".", " ")):
+                    raise ValueError("Manifest task id must be a safe single path component.")
                 return stem
             raise ValueError(_("Manifest task #{} has an empty 'id'.").format(index))
         for key in _MANIFEST_INPUT_KEYS + _MANIFEST_OUTPUT_KEYS:

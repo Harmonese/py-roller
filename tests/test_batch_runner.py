@@ -32,6 +32,8 @@ def test_batch_runner_skips_tasks_when_all_outputs_exist(tmp_path) -> None:
     output.write_text("done", encoding="utf-8")
     task = _task(1, "done", tmp_path, outputs=[output])
 
+    from pyroller.batch_cache import input_fingerprint, record_completion
+    record_completion(task, input_fingerprint(task))
     summary = BatchRunner().run([task], skip_existing=True)
 
     assert summary.total == 1
@@ -45,7 +47,7 @@ def test_batch_runner_emits_protocol_task_events(monkeypatch, tmp_path) -> None:
     task = _task(1, "one", tmp_path, outputs=[output])
     progress = RecordingProgress()
 
-    def fake_run_single(task, execution_context=None):
+    def fake_run_single(task, execution_context=None, progress_reporter=None):
         return BatchTaskResult(
             task.index,
             task.stem,
@@ -73,7 +75,7 @@ def test_batch_runner_emits_protocol_task_events(monkeypatch, tmp_path) -> None:
 def test_batch_runner_aborts_remaining_tasks_after_first_failure(monkeypatch, tmp_path) -> None:
     tasks = [_task(1, "one", tmp_path), _task(2, "two", tmp_path), _task(3, "three", tmp_path)]
 
-    def fake_run_single(task, execution_context=None):
+    def fake_run_single(task, execution_context=None, progress_reporter=None):
         if task.stem == "one":
             return BatchTaskResult(task.index, task.stem, "failed", "boom", task.expected_outputs)
         return BatchTaskResult(task.index, task.stem, "ok", "completed", task.expected_outputs)
@@ -90,7 +92,7 @@ def test_batch_runner_aborts_remaining_tasks_after_first_failure(monkeypatch, tm
 def test_batch_runner_continues_after_failure_when_requested(monkeypatch, tmp_path) -> None:
     tasks = [_task(1, "one", tmp_path), _task(2, "two", tmp_path)]
 
-    def fake_run_single(task, execution_context=None):
+    def fake_run_single(task, execution_context=None, progress_reporter=None):
         status = "failed" if task.stem == "one" else "ok"
         return BatchTaskResult(task.index, task.stem, status, status, task.expected_outputs)
 
@@ -110,7 +112,7 @@ def test_batch_runner_sorts_results_by_original_index(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(
         batch_runner,
         "_run_single_batch_task",
-        lambda task, execution_context=None: BatchTaskResult(task.index, task.stem, "ok", "completed", task.expected_outputs),
+        lambda task, execution_context=None, progress_reporter=None: BatchTaskResult(task.index, task.stem, "ok", "completed", task.expected_outputs),
     )
 
     summary = BatchRunner().run(tasks)

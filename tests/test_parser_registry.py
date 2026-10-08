@@ -24,7 +24,7 @@ from pyroller.parser.zh_router_pinyin import ZhRouterPinyinParser
 )
 def test_parser_registry_maps_languages_to_default_backends(language: str, backend: str, parser_type: type) -> None:
     assert resolve_parser_backend(language) == backend
-    assert list_available_parser_backends(language) == (backend,)
+    assert backend in list_available_parser_backends(language)
     assert isinstance(get_lyrics_parser(language), parser_type)
 
 

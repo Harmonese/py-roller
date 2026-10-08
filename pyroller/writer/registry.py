@@ -18,6 +18,9 @@ def list_available_writer_backends() -> tuple[str, ...]:
 def build_writer(backend_name: str | None, config: dict[str, Any] | None = None) -> Writer:
     backend = backend_name or _DEFAULT_WRITER
     config = dict(config or {})
+    from pyroller.config_contracts import check_options, validate_rules, WRITER_OPTIONS
+    check_options(config, WRITER_OPTIONS, "writer")
+    validate_rules(config, WRITER_OPTIONS)
     by_tag = str(config.get("by_tag") or "py-roller")
     tag_type = str(config.get("tag_type") or "kf")
     spacing = str(config.get("spacing", "keep")).strip().lower()

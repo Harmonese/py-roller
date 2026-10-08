@@ -27,6 +27,8 @@ def build_aligner(backend_name: str | None, config: dict[str, Any]) -> Aligner:
         raise ValueError(
             _("Unsupported aligner backend {!r}. Available backends: {}").format(chosen_backend, ", ".join(list_available_aligner_backends()))
         ) from exc
+    from pyroller.config_contracts import check_options, constructor_options
+    check_options(config, constructor_options(factory), "aligner")
     init_config = {key: value for key, value in dict(config).items() if value is not None}
     init_config.pop("backend", None)
     signature = inspect.signature(factory.__init__)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import math
+from pyroller.utils.files import atomic_path
 
 from pyroller.i18n import _
 from pathlib import Path
@@ -25,8 +27,12 @@ class AdaptiveNoiseGateFilter(AudioFilter):
         min_threshold_db: float = -55.0,
         max_threshold_db: float = -22.0,
         hangover_frames: int = 4,
+        ramp_ms: float = 5.0,
         **_: Any,
     ) -> None:
+        for key, value, minimum in (("frame_length", frame_length, 128), ("hop_length", hop_length, 64), ("hangover_frames", hangover_frames, 0)):
+            if type(value) is not int or value < minimum:
+                raise ValueError(f"{key} must be an integer >= {minimum}")
         self.frame_length = max(128, int(frame_length))
         self.hop_length = max(64, int(hop_length))
         self.threshold_percentile = float(threshold_percentile)
@@ -34,6 +40,13 @@ class AdaptiveNoiseGateFilter(AudioFilter):
         self.min_threshold_db = float(min_threshold_db)
         self.max_threshold_db = float(max_threshold_db)
         self.hangover_frames = max(0, int(hangover_frames))
+        self.ramp_ms = float(ramp_ms)
+        if not 0 <= self.threshold_percentile <= 100 or self.min_threshold_db > self.max_threshold_db:
+            raise ValueError("Invalid noise gate thresholds")
+        if not all(math.isfinite(v) for v in (self.threshold_percentile, self.threshold_bias_db, self.min_threshold_db, self.max_threshold_db, self.ramp_ms)) or self.ramp_ms < 0:
+            raise ValueError("Noise gate parameters must be finite and ramp_ms nonnegative")
+        if self.hop_length > self.frame_length:
+            raise ValueError("hop_length must not exceed frame_length")
 
     def process(self, audio_artifact: AudioArtifact, output_dir: Path) -> AudioArtifact:
         try:
@@ -56,17 +69,26 @@ class AdaptiveNoiseGateFilter(AudioFilter):
             logger.warning(_("noise_gate received empty audio at %s; forwarding unchanged"), source_path)
             return audio_artifact
 
-        mono = audio.mean(axis=1)
+        if not np.isfinite(audio).all():
+            raise ValueError("Noise gate input contains non-finite samples")
+        mono = np.sqrt(np.mean(np.square(audio), axis=1))
         frame_db = self._frame_rms_db(np, mono)
         threshold_db = self._estimate_threshold_db(np, frame_db)
         keep_mask = self._build_keep_mask(np, frame_db, threshold_db)
         sample_mask = self._expand_keep_mask(np, keep_mask, len(mono))
-        gated = audio.copy()
-        gated[~sample_mask, :] = 0.0
+        gain = sample_mask.astype(float)
+        radius = min(len(gain) // 2, int(sample_rate * self.ramp_ms / 1000))
+        if radius > 0:
+            # Symmetric, centered smoothing preserves the time axis and unity
+            # gain on constant kept regions, including both audio boundaries.
+            kernel = np.ones(2 * radius + 1) / (2 * radius + 1)
+            gain = np.convolve(np.pad(gain, (radius, radius), mode="edge"), kernel, mode="valid")
+        gated = audio * gain[:, None]
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        destination = output_dir / f"{source_path.stem}.noise_gate{source_path.suffix}"
-        sf.write(str(destination), gated, sample_rate)
+        destination = output_dir / f"{source_path.stem}.noise_gate.wav"
+        with atomic_path(destination) as temporary:
+            sf.write(str(temporary), gated, sample_rate, subtype="FLOAT")
 
         suppressed_ratio = float(1.0 - keep_mask.mean()) if keep_mask.size else 0.0
         logger.info(
@@ -108,7 +130,7 @@ class AdaptiveNoiseGateFilter(AudioFilter):
             rms = np.sqrt(np.mean(np.square(mono), dtype=np.float64))
             return np.array([20.0 * np.log10(max(float(rms), 1e-8))], dtype=np.float64)
 
-        frame_count = 1 + max(0, (len(mono) - self.frame_length) // self.hop_length)
+        frame_count = 1 + max(0, math.ceil((len(mono) - self.frame_length) / self.hop_length))
         rms_values = np.empty(frame_count, dtype=np.float64)
         for index in range(frame_count):
             start = index * self.hop_length
@@ -127,8 +149,6 @@ class AdaptiveNoiseGateFilter(AudioFilter):
 
     def _build_keep_mask(self, np: Any, frame_db: Any, threshold_db: float) -> Any:
         keep = frame_db >= threshold_db
-        if not keep.any() and keep.size:
-            keep[int(frame_db.argmax())] = True
         if self.hangover_frames <= 0 or keep.size == 0:
             return keep
         smoothed = keep.copy()
@@ -148,6 +168,4 @@ class AdaptiveNoiseGateFilter(AudioFilter):
             end = min(sample_count, start + self.frame_length)
             if keep:
                 sample_mask[start:end] = True
-        if not sample_mask.any():
-            sample_mask[:] = True
         return sample_mask

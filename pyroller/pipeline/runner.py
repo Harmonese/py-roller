@@ -5,6 +5,8 @@ import importlib.util
 import json
 import logging
 import shutil
+from pyroller.utils.files import atomic_path
+from pyroller.quality import enforce_quality
 from pathlib import Path
 from typing import Any
 
@@ -36,11 +38,12 @@ from pyroller.progress import NullProgressReporter, ProgressReporter
 from pyroller.splitter import build_splitter, get_splitter_requirements
 from pyroller.transcriber.registry import get_transcriber_requirements, resolve_transcriber_backend
 from pyroller.utils.ids import make_id
+from pyroller.pipeline.workspace import RunWorkspace
+from pyroller.logging_utils import configure_logging, close_log_file
 from pyroller.writer import build_writer
 
 logger = logging.getLogger("pyroller.pipeline")
 
-_INTERMEDIATE_OWNER_MARKER = ".py-roller-owner.json"
 _AUTO_LYRICS_ENCODINGS = ("utf-8-sig", "utf-16", "gb18030", "shift_jis")
 _LYRICS_ENCODING_ALIASES = {
     "shift-jis": "shift_jis",
@@ -66,6 +69,30 @@ class ComposablePipelineRunner:
         self.execution_context.close()
 
     def run(self, request: PipelineRequest) -> RunPipelineResult:
+        from dataclasses import replace
+        parser_config = request.backend_config.get("parser", {}) if isinstance(request.backend_config, dict) else {}
+        if isinstance(parser_config, dict) and parser_config.get("latin_language") and "transcriber" in self._resolve_execution_plan(request):
+            configs = {key: dict(value) for key, value in request.backend_config.items()}
+            existing_hint = configs.get("transcriber", {}).get("latin_language")
+            if existing_hint is not None and existing_hint != parser_config["latin_language"]:
+                raise ValueError("Parser and transcriber latin_language must agree")
+            configs.setdefault("transcriber", {})["latin_language"] = parser_config["latin_language"]
+            request = replace(request, backend_config=configs)
+        self._validate_request(request, self._resolve_execution_plan(request))
+        from dataclasses import fields
+        inputs, outputs = [], []
+        for field in fields(request):
+            path = getattr(request, field.name)
+            if field.name.endswith("_path") and isinstance(path, Path):
+                (outputs if field.name.startswith("output_") else inputs).append(path.expanduser().resolve())
+        if len(set(outputs)) != len(outputs) or set(inputs) & set(outputs):
+            raise ValueError("Input and output paths must not collide")
+        if any(a in b.parents or b in a.parents for i, a in enumerate(inputs + outputs) for b in (inputs + outputs)[i+1:] if a != b):
+            raise ValueError("Input/output files cannot be ancestors of other input/output paths")
+        workspace = RunWorkspace(request)
+        request = workspace.request
+        self.last_request = request
+        configure_logging(request.log_level, request.intermediate_dir / "logs" / "run.log")
         stages = self._resolve_execution_plan(request)
         effective_language = self._resolve_language(request.language)
         success = False
@@ -81,7 +108,6 @@ class ComposablePipelineRunner:
         try:
             self._validate_request(request, stages)
             self._preflight_environment(request, stages, effective_language)
-            self._ensure_intermediate_dir_ownership(request, stages)
 
             registry: dict[str, Any] = {}
 
@@ -226,6 +252,7 @@ class ComposablePipelineRunner:
                 alignment = aligner.align(transcription, parsed_lyrics, progress=self.progress_reporter)
                 registry["alignment_result"] = alignment
                 result.alignment = alignment
+                enforce_quality(alignment, request.backend_config.get("quality"))
                 if request.output_alignment_result_path is not None:
                     alignment.save(request.output_alignment_result_path)
                     self._emit_artifact_written("aligner", "alignment_result", request.output_alignment_result_path)
@@ -239,6 +266,7 @@ class ComposablePipelineRunner:
                 try:
                     writer_stage.phase(_("writing output"))
                     alignment = self._require_registry_item(registry, "alignment_result", "writer")
+                    enforce_quality(alignment, request.backend_config.get("quality"))
                     output_path = request.output_roller_path
                     if output_path is None:
                         raise ValueError(_("Writer stage requires --output-roller."))
@@ -281,8 +309,9 @@ class ComposablePipelineRunner:
             )
             raise
         finally:
-            if success:
-                self._cleanup_intermediate_dir(request)
+            close_log_file(request.intermediate_dir / "logs" / "run.log")
+            if success and request.cleanup == "on-success":
+                workspace.cleanup()
 
     def _emit_artifact_written(self, stage: str, artifact_type: str, path: Path | None) -> None:
         self.progress_reporter.event(
@@ -292,25 +321,6 @@ class ComposablePipelineRunner:
             path=str(path) if path is not None else None,
             message=_("Wrote {} artifact").format(artifact_type),
         )
-
-    def _cleanup_intermediate_dir(self, request: PipelineRequest) -> None:
-        if request.cleanup != "on-success":
-            return
-        if not request.intermediate_dir.exists():
-            return
-        marker_path = request.intermediate_dir / _INTERMEDIATE_OWNER_MARKER
-        if not marker_path.exists():
-            logger.warning(_("Refusing to remove intermediate dir without ownership marker: %s"), request.intermediate_dir)
-            return
-        try:
-            marker = json.loads(marker_path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.warning(_("Refusing to remove intermediate dir with unreadable ownership marker: %s"), request.intermediate_dir)
-            return
-        if not marker.get("owned_by") == "py-roller" or marker.get("intermediate_dir") != str(request.intermediate_dir.resolve()):
-            logger.warning(_("Refusing to remove intermediate dir with mismatched ownership marker: %s"), request.intermediate_dir)
-            return
-        shutil.rmtree(request.intermediate_dir, ignore_errors=True)
 
     def _resolve_execution_plan(self, request: PipelineRequest) -> list[str]:
         return resolve_execution_plan(request)
@@ -368,7 +378,7 @@ class ComposablePipelineRunner:
                 required_modules[module_name] = f"transcriber backend {transcriber_backend}"
 
         if "parser" in stages:
-            for module_name in get_parser_requirements(effective_language):
+            for module_name in get_parser_requirements(effective_language, request.backend_config.get("parser", {}).get("backend")):
                 required_modules[module_name] = f"parser language {effective_language}"
 
         missing: list[str] = []
@@ -409,16 +419,6 @@ class ComposablePipelineRunner:
                     preflight_stage.fail(preflight_failure_message)
                 else:
                     preflight_stage.close(_("preflight complete"))
-
-    def _ensure_intermediate_dir_ownership(self, request: PipelineRequest, stages: list[str]) -> None:
-        request.intermediate_dir.mkdir(parents=True, exist_ok=True)
-        marker_path = request.intermediate_dir / _INTERMEDIATE_OWNER_MARKER
-        marker = {
-            "owned_by": "py-roller",
-            "intermediate_dir": str(request.intermediate_dir.resolve()),
-            "stages": stages,
-        }
-        marker_path.write_text(json.dumps(marker, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _require_registry_item(self, registry: dict[str, Any], key: str, stage: str):
         if key not in registry:
@@ -506,7 +506,8 @@ class ComposablePipelineRunner:
         if artifact.path is None:
             raise ValueError(_("Cannot materialize audio artifact from stage '{}' without a source path.").format(stage_name))
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(artifact.path, destination)
+        with atomic_path(destination) as temporary:
+            shutil.copy2(artifact.path, temporary)
         metadata = dict(artifact.metadata)
         metadata["materialized_from"] = str(artifact.path)
         logger.info(_("Materialized %s output to %s"), stage_name, destination)

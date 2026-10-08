@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+from pyroller.utils.time import format_ass_timestamp
 from pyroller.writer.ass_karaoke import ASSKaraokeWriter
 
 from .factories import make_alignment_result
@@ -30,3 +33,31 @@ def test_ass_writer_escapes_override_characters(tmp_path) -> None:
     ASSKaraokeWriter(skip_structural_lines=True).write(alignment, output)
 
     assert r"a\{b\}\\c" in output.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize('end', [3.0, 3.5])
+def test_ass_preserves_observed_end_at_or_after_next_line(tmp_path, end):
+    alignment = make_alignment_result()
+    alignment.lines[0].end_time = end
+    alignment.lines[0].aligned_units[-1].end_time = end
+    output = tmp_path / 'overlap.ass'
+    ASSKaraokeWriter().write(alignment, output)
+    first = next(line for line in output.read_text().splitlines() if line.startswith('Dialogue:'))
+    assert first.split(',')[2] == format_ass_timestamp(end)
+
+
+def test_ass_inferred_duration_respects_next_line():
+    alignment = make_alignment_result()
+    line = alignment.lines[0]
+    line.aligned_units = []
+    line.end_time = line.start_time
+    alignment.lines[2].start_time = 1.3
+    assert 1.0 < ASSKaraokeWriter()._display_end_time(alignment.lines, 0) < 1.3
+
+
+@pytest.mark.parametrize('seconds,expected', [
+    (59.999, '0:01:00.00'), (3599.999, '1:00:00.00'),
+    (59.99, '0:00:59.99'), (3600, '1:00:00.00'), (0, '0:00:00.00'),
+])
+def test_ass_timestamp_carries_rounded_centiseconds(seconds, expected):
+    assert format_ass_timestamp(seconds) == expected

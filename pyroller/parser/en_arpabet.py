@@ -8,6 +8,7 @@ from typing import Any
 from pyroller.domain import LyricLine, LyricUnit, LyricsDocument, ParsedLyrics
 from pyroller.parser.base import LyricsParser
 from pyroller.utils.ids import make_id
+from pyroller.language_diagnostics import english_warnings
 from pyroller.utils.text import english_text_to_arpabet_units, normalize_english_text
 
 logger = logging.getLogger("pyroller.parser")
@@ -19,10 +20,12 @@ class EnglishARPAbetParser(LyricsParser):
 
     def parse(self, lyrics_document: LyricsDocument, language: str, tone_mode: str) -> ParsedLyrics:
         parsed_lines: list[LyricLine] = []
+        warnings = []
 
         for line in lyrics_document.lines:
             normalized = normalize_english_text(line.raw_text)
             phones = english_text_to_arpabet_units(line.raw_text)
+            warnings.extend(english_warnings(line.raw_text, phones))
             units: list[LyricUnit] = []
             for idx, phone in enumerate(phones):
                 units.append(
@@ -35,6 +38,7 @@ class EnglishARPAbetParser(LyricsParser):
                         tone=phone.get("stress"),
                         line_index=line.line_index,
                         unit_index_in_line=idx,
+                        source_text_span=phone.get("source_text_span"),
                         metadata={
                             "raw_text": line.raw_text,
                             "normalized_text": normalized,
@@ -60,6 +64,7 @@ class EnglishARPAbetParser(LyricsParser):
             unit_type="arpabet_phone",
             metadata={
                 "line_count": len(parsed_lines),
+                "language_warnings": warnings,
                 "stress_normalized": True,
             },
         )

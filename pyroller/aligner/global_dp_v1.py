@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
+from pyroller.quality import evaluate_quality, attach_timing_provenance
 
 from pyroller.i18n import _
 
@@ -44,6 +45,17 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         self.repetition = repetition
 
     def align(self, transcription: TranscriptionResult, parsed_lyrics: ParsedLyrics, progress: ProgressReporter | None = None) -> AlignmentResult:
+        from pyroller.domain.validation import validate_alignment_inputs
+        validate_alignment_inputs(transcription, parsed_lyrics)
+        result = self._align(transcription, parsed_lyrics, progress)
+        attach_timing_provenance(result, transcription)
+        result.metadata["language_warnings"] = parsed_lyrics.metadata.get("language_warnings", []) + transcription.metadata.get("language_warnings", [])
+        from pyroller.domain.validation import validate_payload
+        validate_payload(result.to_dict(), 'alignment_result')
+        evaluate_quality(result)
+        return result
+
+    def _align(self, transcription: TranscriptionResult, parsed_lyrics: ParsedLyrics, progress: ProgressReporter | None = None) -> AlignmentResult:
         progress = progress or NullProgressReporter()
         global_units, skipped_segments = self._build_global_unit_sequence(transcription)
         lyric_lines = parsed_lyrics.lines
@@ -180,7 +192,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
         self._finalize_line_end_times(alignment_lines, max_time=max_time)
         stage_progress.phase(_("finalizing alignment result"))
 
-        confidences = [line.confidence for line in alignment_lines if line.confidence > 0]
+        confidences = [line.confidence for line in alignment_lines if line.raw_text.strip() and not line.metadata.get("is_structural")]
         overall_confidence = sum(confidences) / len(confidences) if confidences else 0.0
         report = self._build_report(
             alignment_lines,
@@ -271,7 +283,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             lyric_symbol = lyric_units[i - 1]["symbol"]
             for j in range(1, n + 1):
                 audio_symbol = global_units[j - 1]["symbol"]
-                similarity = self._symbol_similarity(lyric_symbol, audio_symbol)
+                similarity = self._symbol_similarity(lyric_symbol, audio_symbol) * global_units[j - 1]["confidence"]
                 diag_score = dp[i - 1][j - 1] + self._pair_score(similarity)
                 up_score = dp[i - 1][j] + self.lyric_gap_penalty
                 left_score = dp[i][j - 1] + self.audio_gap_penalty
@@ -299,7 +311,7 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
             if move == "diag" and i > 0 and j > 0:
                 lyric_symbol = lyric_units[i - 1]["symbol"]
                 audio_symbol = global_units[j - 1]["symbol"]
-                similarity = self._symbol_similarity(lyric_symbol, audio_symbol)
+                similarity = self._symbol_similarity(lyric_symbol, audio_symbol) * global_units[j - 1]["confidence"]
                 accepted = similarity >= self.min_match_similarity
                 if accepted:
                     accepted_matches += 1
@@ -658,6 +670,19 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 should_update = old_trust in {"weak", "unresolved"} or candidate.score >= old_confidence + 0.05
                 if not should_update:
                     continue
+                # A lattice path is chronological by itself, but only some of
+                # its proposals replace the original DP assignments. Check the
+                # neighbours that will actually remain before accepting one.
+                previous = next((item for item in reversed(assignments[:assign_idx])
+                                 if item.get("pos", -1) >= 0), None)
+                following = next((item for item in assignments[assign_idx + 1:]
+                                  if item.get("pos", -1) >= 0), None)
+                if previous is not None and (candidate.audio_start <= previous["end_pos"]
+                                              or candidate.start_time < previous["time"]):
+                    continue
+                if following is not None and (candidate.audio_end >= following["pos"]
+                                               or candidate.start_time > following["time"]):
+                    continue
                 line = lyric_lines[assign_idx]
                 selected_count += 1
                 segment_selected += 1
@@ -754,4 +779,3 @@ class GlobalDPAligner(Aligner, SequenceAlignmentSupport):
                 metadata.setdefault("matched_start_time", interpolated_time)
                 metadata.setdefault("matched_end_time", interpolated_time)
                 metadata.setdefault("unit_matches", [])
-

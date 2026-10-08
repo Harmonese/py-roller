@@ -36,7 +36,7 @@ def test_execution_context_reuses_transcriber_for_same_sanitized_config(monkeypa
         first = context.get_transcriber(
             language="zh",
             backend_name="faster_whisper",
-            config={"model_name": "turbo", "unsupported": "ignored"},
+            config={"model_name": "turbo", "hf_proxy": None},
         )
         second = context.get_transcriber(
             language="zh",

@@ -37,7 +37,6 @@ def test_sanitize_splitter_config_filters_unknown_and_none_values() -> None:
             "device": "cpu",
             "jobs": None,
             "two_stems": "vocals",
-            "unexpected": "ignored",
         },
     )
 
@@ -59,7 +58,6 @@ def test_build_splitter_passes_sanitized_config(tmp_path) -> None:
             "jobs": 1,
             "overlap": 0.25,
             "segment": 8.0,
-            "ignored": "x",
         },
     )
 
@@ -71,3 +69,8 @@ def test_build_splitter_passes_sanitized_config(tmp_path) -> None:
     assert splitter.jobs == 1
     assert splitter.overlap == 0.25
     assert splitter.segment == 8.0
+
+
+def test_splitter_rejects_unknown_options():
+    with pytest.raises(ValueError, match="Unsupported"):
+        sanitize_splitter_config("demucs", {"unexpected": "typo"})

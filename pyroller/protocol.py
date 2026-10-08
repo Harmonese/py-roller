@@ -46,25 +46,6 @@ _REQUEST_ALIASES = {
     "intermediate": "intermediate_dir",
 }
 
-_OPTION_METADATA: list[dict[str, Any]] = [
-    {"name": "language", "type": "choice", "choices": LANGUAGES, "stages": STAGE_ORDER, "default": "mul"},
-    {"name": "stages", "type": "stage_chain", "choices": STAGE_ORDER, "stages": STAGE_ORDER},
-    {"name": "cleanup", "type": "choice", "choices": ["on-success", "never"], "default": "on-success"},
-    {"name": "log_level", "type": "choice", "choices": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "INFO"},
-    {"name": "splitter_backend", "type": "string", "stages": ["s"]},
-    {"name": "filter_chain", "type": "string_list", "stages": ["f"]},
-    {"name": "transcriber_backend", "type": "string", "stages": ["t"]},
-    {"name": "transcriber_device", "type": "string", "stages": ["t"]},
-    {"name": "transcriber_model_name", "type": "string", "stages": ["t"]},
-    {"name": "transcriber_model_path", "type": "path", "stages": ["t"]},
-    {"name": "transcriber_local_files_only", "type": "boolean", "stages": ["t"]},
-    {"name": "parser_lyrics_encoding", "type": "choice", "stages": ["p"]},
-    {"name": "aligner_backend", "type": "string", "stages": ["a"]},
-    {"name": "writer_backend", "type": "string", "stages": ["w"]},
-    {"name": "writer_spacing", "type": "choice", "choices": ["keep", "drop"], "stages": ["w"], "default": "keep"},
-]
-
-
 @dataclass(slots=True)
 class ProtocolBatchOptions:
     continue_on_error: bool = False
@@ -97,7 +78,7 @@ class ProtocolErrorDetail:
         return cls(
             type=exc.__class__.__name__,
             message=str(exc),
-            code=code,
+            code=getattr(exc, "code", code),
             detail=detail or {},
         )
 
@@ -148,6 +129,7 @@ def _source_tree_version() -> str | None:
 
 
 def capabilities() -> dict[str, Any]:
+    from pyroller.config_contracts import backend_schemas, cli_option_metadata
     payload = protocol_envelope(
         "capabilities",
         stage_order=STAGE_ORDER,
@@ -166,7 +148,8 @@ def capabilities() -> dict[str, Any]:
             "event": 1,
             "result": 1,
         },
-        options=list(_OPTION_METADATA),
+        options=cli_option_metadata(),
+        backend_schemas=backend_schemas(),
     )
     payload.pop("artifact_paths", None)
     return payload
@@ -175,12 +158,16 @@ def capabilities() -> dict[str, Any]:
 def _path_or_none(value: object) -> Path | None:
     if value is None:
         return None
+    if not isinstance(value, (str, Path)):
+        raise ValueError("Path values must be strings")
     text = str(value).strip()
     return Path(text) if text else None
 
 
 def _request_payload(data: dict[str, Any]) -> dict[str, Any]:
-    if data.get("protocol_version") not in {None, PROTOCOL_VERSION}:
+    if not isinstance(data, dict):
+        raise ValueError("Protocol request must be an object")
+    if data.get("protocol_version") is not None and (type(data["protocol_version"]) is not int or data["protocol_version"] != PROTOCOL_VERSION):
         raise ValueError(f"Unsupported py-roller protocol version: {data.get('protocol_version')}")
     payload = data.get("request", data)
     if not isinstance(payload, dict):
@@ -191,7 +178,9 @@ def _request_payload(data: dict[str, Any]) -> dict[str, Any]:
 def pipeline_request_from_dict(data: dict[str, Any]) -> PipelineRequest:
     payload = _request_payload(data)
     for source, target in _REQUEST_ALIASES.items():
-        if source in payload and target not in payload:
+        if source in payload:
+            if target in payload and payload[source] != payload[target]:
+                raise ValueError(f"Conflicting request fields: {source} and {target}")
             payload[target] = payload.pop(source)
     for field_name in _PATH_FIELDS:
         if field_name in payload:
@@ -199,6 +188,8 @@ def pipeline_request_from_dict(data: dict[str, Any]) -> PipelineRequest:
     stages = payload.get("stages")
     if isinstance(stages, str):
         payload["stages"] = [item.strip() for item in stages.split(",") if item.strip()]
+    if not isinstance(payload.get("stages"), list) or any(not isinstance(stage, str) for stage in payload["stages"]):
+        raise ValueError("stages must be a list of strings")
     backend_config = payload.get("backend_config")
     if backend_config is None:
         payload["backend_config"] = {}
@@ -220,7 +211,10 @@ def batch_request_from_json(path: Path) -> ProtocolBatchRequest:
     options_data = dict(raw_options)
     if "manifest" in options_data:
         options_data["manifest"] = _path_or_none(options_data["manifest"])
-    return ProtocolBatchRequest(request=request, options=ProtocolBatchOptions(**options_data))
+    options = ProtocolBatchOptions(**options_data)
+    if type(options.jobs) is not int or options.jobs < 1 or any(type(getattr(options, key)) is not bool for key in ("continue_on_error", "skip_existing")):
+        raise ValueError("Invalid batch jobs or boolean options")
+    return ProtocolBatchRequest(request=request, options=options)
 
 
 def run_result_report(result: RunPipelineResult, request: PipelineRequest) -> dict[str, Any]:
@@ -228,6 +222,7 @@ def run_result_report(result: RunPipelineResult, request: PipelineRequest) -> di
         "run_result",
         artifact_paths=artifact_paths_for_request(request),
         executed_stages=result.executed_stages,
+        quality=result.alignment.report.get("quality") if result.alignment else None,
         counts={
             "timed_units": len(result.transcription.units) if result.transcription is not None else None,
             "parsed_lyrics": len(result.parsed_lyrics.lines) if result.parsed_lyrics is not None else None,
@@ -243,7 +238,7 @@ def batch_task_result_report(item: BatchTaskResult) -> dict[str, Any]:
         artifact_paths = {path.stem: str(path) for path in item.outputs}
     error = None
     if item.status == "failed":
-        error = {
+        error = item.error or {
             "type": "BatchTaskError",
             "code": "batch_task_failed",
             "message": item.message,
@@ -257,6 +252,7 @@ def batch_task_result_report(item: BatchTaskResult) -> dict[str, Any]:
         "outputs": [str(path) for path in item.outputs],
         "log_file": str(item.log_file) if item.log_file is not None else None,
         "cleaned": item.cleaned,
+        "quality": item.quality,
         "error": error,
     }
 

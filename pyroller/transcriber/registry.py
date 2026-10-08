@@ -74,11 +74,7 @@ def sanitize_transcriber_config(backend_name: str, config: dict[str, Any] | None
     filtered = {key: value for key, value in init_config.items() if key in accepted}
     ignored = sorted(set(init_config) - set(accepted))
     if ignored:
-        logger.info(
-            _("Ignoring backend-incompatible transcriber option(s) for %s: %s"),
-            backend_name,
-            ", ".join(ignored),
-        )
+        raise ValueError(f"Unsupported {backend_name} options: {ignored}")
     return filtered
 
 

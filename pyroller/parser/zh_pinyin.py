@@ -18,7 +18,7 @@ class ChinesePinyinParser(LyricsParser):
 
         for line in lyrics_document.lines:
             normalized = normalize_chinese_text(line.raw_text)
-            syllables = chinese_text_to_pinyin_syllables(normalized, tone_mode=tone_mode)
+            syllables = chinese_text_to_pinyin_syllables(line.raw_text, tone_mode=tone_mode)
             units: list[LyricUnit] = []
             for idx, syllable in enumerate(syllables):
                 units.append(
@@ -31,6 +31,7 @@ class ChinesePinyinParser(LyricsParser):
                         tone=syllable["tone"],
                         line_index=line.line_index,
                         unit_index_in_line=idx,
+                        source_text_span=syllable.get("source_text_span"),
                         metadata={
                             "raw_text": line.raw_text,
                             "normalized_text": normalized,

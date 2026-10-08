@@ -6,6 +6,7 @@ from pyroller.i18n import _
 import math
 from collections import Counter
 from difflib import SequenceMatcher
+from functools import lru_cache
 from typing import Any, Optional
 
 from pyroller.domain import AlignedUnit, AlignmentLine, LyricLine, TranscriptionResult
@@ -53,7 +54,7 @@ class SequenceAlignmentSupport:
         if transcription.raw_segments:
             first_segment_start = self._segment_start(transcription.raw_segments[0])
             if first_segment_start is not None:
-                start_time = first_segment_start
+                start_time = min(start_time, first_segment_start) if global_units else first_segment_start
             segment_end = self._segment_end(transcription.raw_segments[-1])
             if segment_end is not None:
                 end_candidates.append(segment_end)
@@ -82,6 +83,7 @@ class SequenceAlignmentSupport:
                     "pos": len(global_units),
                     "unit_index": idx,
                     "symbol": unit.normalized_symbol,
+                    "confidence": unit.confidence if unit.confidence is not None else 1.0,
                     "start_time": unit.start_time,
                     "end_time": unit.end_time,
                     "seg_idx": seg_idx if isinstance(seg_idx, int) else -1,
@@ -97,7 +99,9 @@ class SequenceAlignmentSupport:
             return 0.0
         return float(SequenceMatcher(None, left, right).ratio())
 
-    def _symbol_similarity(self, left: str, right: str) -> float:
+    @staticmethod
+    @lru_cache(maxsize=4096)
+    def _symbol_similarity(left: str, right: str) -> float:
         if not left or not right:
             return 0.0
         if left == right:
@@ -148,99 +152,30 @@ class SequenceAlignmentSupport:
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         if not assignments:
             return [], []
-
         repaired = [dict(item) for item in assignments]
-        repairs: list[dict[str, Any]] = []
-        for item in repaired:
-            original = float(item["time"])
-            clamped = min(max(original, min_time), max_time)
-            if not math.isclose(original, clamped):
-                repairs.append(
-                    {
-                        "lyric_idx": item["lyric_idx"],
-                        "old_time": original,
-                        "new_time": clamped,
-                        "reason": "clamp_to_window",
-                    }
-                )
-                item["time"] = clamped
-
-        if len(repaired) == 1:
-            return repaired, repairs
-
-        available_span = max(max_time - min_time, 0.0)
-        effective_gap = min(min_gap, available_span / (len(repaired) - 1)) if len(repaired) > 1 else min_gap
-
-        prev_time = float(repaired[0]["time"])
-        for idx in range(1, len(repaired)):
-            current = float(repaired[idx]["time"])
-            minimum_allowed = prev_time + effective_gap
-            if current < minimum_allowed:
-                repairs.append(
-                    {
-                        "lyric_idx": repaired[idx]["lyric_idx"],
-                        "old_time": current,
-                        "new_time": minimum_allowed,
-                        "reason": "forward_min_gap",
-                    }
-                )
-                repaired[idx]["time"] = minimum_allowed
-                current = minimum_allowed
-            prev_time = current
-
-        if float(repaired[-1]["time"]) > max_time:
-            old_last = float(repaired[-1]["time"])
-            repaired[-1]["time"] = max_time
-            repairs.append(
-                {
-                    "lyric_idx": repaired[-1]["lyric_idx"],
-                    "old_time": old_last,
-                    "new_time": max_time,
-                    "reason": "clamp_tail_to_end",
-                }
-            )
-            for idx in range(len(repaired) - 2, -1, -1):
-                current = float(repaired[idx]["time"])
-                maximum_allowed = float(repaired[idx + 1]["time"]) - effective_gap
-                if current > maximum_allowed:
-                    repairs.append(
-                        {
-                            "lyric_idx": repaired[idx]["lyric_idx"],
-                            "old_time": current,
-                            "new_time": maximum_allowed,
-                            "reason": "backward_min_gap",
-                        }
-                    )
-                    repaired[idx]["time"] = maximum_allowed
-
-            if float(repaired[0]["time"]) < min_time:
-                old_first = float(repaired[0]["time"])
-                repaired[0]["time"] = min_time
-                repairs.append(
-                    {
-                        "lyric_idx": repaired[0]["lyric_idx"],
-                        "old_time": old_first,
-                        "new_time": min_time,
-                        "reason": "clamp_head_to_start",
-                    }
-                )
-                prev_time = min_time
-                for idx in range(1, len(repaired)):
-                    current = float(repaired[idx]["time"])
-                    minimum_allowed = prev_time + effective_gap
-                    if current < minimum_allowed:
-                        repairs.append(
-                            {
-                                "lyric_idx": repaired[idx]["lyric_idx"],
-                                "old_time": current,
-                                "new_time": minimum_allowed,
-                                "reason": "forward_min_gap",
-                            }
-                        )
-                        repaired[idx]["time"] = minimum_allowed
-                        current = minimum_allowed
-                    prev_time = current
-
+        repairs = []
+        anchors = [i for i, item in enumerate(repaired) if item.get("pos", -1) >= 0]
+        if any(float(repaired[a]["time"]) > float(repaired[b]["time"]) for a, b in zip(anchors, anchors[1:])):
+            raise ValueError("Matched line anchors must be chronological")
+        # Acoustic matches are immutable anchors. A display gap must never push
+        # a fast lyric line past its already matched words.
+        boundaries = [-1, *anchors, len(repaired)]
+        for left, right in zip(boundaries, boundaries[1:]):
+            count = right - left - 1
+            if not count:
+                continue
+            lower = float(repaired[left]["time"]) if left >= 0 else min_time
+            upper = float(repaired[right]["time"]) if right < len(repaired) else max_time
+            gap = min(max(0.0, min_gap), max(0.0, upper - lower) / (count + 1))
+            previous = lower
+            for index in range(left + 1, right):
+                old = float(repaired[index]["time"])
+                new = min(max(old, previous + gap), upper - (right - index) * gap)
+                repaired[index]["time"] = new
+                previous = new
+                if not math.isclose(old, new):
+                    repairs.append({"lyric_idx": repaired[index]["lyric_idx"], "old_time": old,
+                                    "new_time": new, "reason": "interpolated_min_gap"})
         return repaired, repairs
 
     def _assignment_to_alignment_line(self, line: LyricLine, assignment: dict[str, Any]) -> AlignmentLine:
@@ -257,6 +192,8 @@ class SequenceAlignmentSupport:
         line_start = float(assignment.get("time", 0.0))
         matched_start = self._coerce_float(metadata.get("matched_start_time"), default=line_start)
         matched_end = self._coerce_float(metadata.get("matched_end_time"), default=matched_start)
+        if matched_range is None:
+            matched_start = matched_end = line_start
         end_time = matched_end if matched_end >= matched_start else matched_start
         aligned_units = self._build_aligned_units(
             line=line,
@@ -306,10 +243,6 @@ class SequenceAlignmentSupport:
 
         base_start = min(line_start, line_end)
         base_end = max(line_start, line_end)
-        if math.isclose(base_end, base_start):
-            default_duration = max(float(metadata.get("fallback_unit_duration", 0.12)), 0.01)
-            base_end = base_start + (default_duration * unit_count)
-
         unit_times: list[tuple[float, float, float, Optional[int]]] = []
         for idx, unit in enumerate(line.units):
             explicit = explicit_by_index.get(idx)
@@ -329,14 +262,32 @@ class SequenceAlignmentSupport:
 
             start = base_start + ((idx / unit_count) * (base_end - base_start))
             end = base_start + (((idx + 1) / unit_count) * (base_end - base_start))
-            unit_times.append((start, end, confidence if matched_range else 0.0, None))
+            unit_times.append((start, end, 0.0, None))
 
-        self._normalize_unit_times(unit_times, base_start, base_end)
+        # Fill only the gaps between immutable matches, including zero-width
+        # gaps. Never manufacture room by moving an observed timestamp.
+        anchors = sorted(explicit_by_index)
+        for left, right in zip([-1, *anchors], [*anchors, unit_count]):
+            count = right - left - 1
+            if not count:
+                continue
+            lower = unit_times[left][1] if left >= 0 else base_start
+            upper = unit_times[right][0] if right < unit_count else base_end
+            lower = min(lower, upper)
+            for offset, index in enumerate(range(left + 1, right)):
+                start = lower + (upper - lower) * offset / count
+                end = lower + (upper - lower) * (offset + 1) / count
+                unit_times[index] = (start, end, 0.0, None)
 
         aligned_units: list[AlignedUnit] = []
+        text_cursor = 0
         for unit, timing in zip(line.units, unit_times):
             start, end, unit_conf, audio_pos = timing
             display_text = str(unit.metadata.get("source_char") or unit.metadata.get("display_text") or unit.symbol or unit.normalized_symbol)
+            if unit.source_text_span is not None:
+                span_start, span_end = unit.source_text_span
+                display_text = line.raw_text[text_cursor:span_end] if span_end > text_cursor else ""
+                text_cursor = max(text_cursor, span_end)
             aligned_units.append(
                 AlignedUnit(
                     unit_id=unit.unit_id,
@@ -349,71 +300,28 @@ class SequenceAlignmentSupport:
                     end_time=end,
                     confidence=unit_conf,
                     source_audio_unit_index=audio_pos,
-                    source_audio_unit_range=(audio_pos, audio_pos) if audio_pos is not None else matched_range,
+                    source_audio_unit_range=(audio_pos, audio_pos) if audio_pos is not None else None,
                     metadata={
                         "tone": unit.tone,
+                        "source_text_span": unit.source_text_span,
                         **dict(unit.metadata),
                     },
                 )
             )
+        if text_cursor and text_cursor < len(line.raw_text):
+            aligned_units[-1].text += line.raw_text[text_cursor:]
         return aligned_units
-
-    def _normalize_unit_times(
-        self,
-        unit_times: list[tuple[float, float, float, Optional[int]]],
-        line_start: float,
-        line_end: float,
-    ) -> None:
-        if not unit_times:
-            return
-        repaired: list[tuple[float, float, float, Optional[int]]] = []
-        prev_end = line_start
-        total = len(unit_times)
-        fallback_duration = max((line_end - line_start) / max(1, total), 0.01)
-        for idx, (start, end, conf, audio_pos) in enumerate(unit_times):
-            start = max(start, prev_end)
-            if end <= start:
-                remaining_slots = max(1, total - idx)
-                remaining_span = max(line_end - start, fallback_duration)
-                end = start + max(remaining_span / remaining_slots, 0.01)
-            repaired.append((start, end, conf, audio_pos))
-            prev_end = end
-        if repaired[-1][1] < line_end:
-            start, _, conf, audio_pos = repaired[-1]
-            repaired[-1] = (start, line_end, conf, audio_pos)
-        elif repaired[-1][1] > line_end:
-            start, _, conf, audio_pos = repaired[-1]
-            repaired[-1] = (min(start, line_end), line_end, conf, audio_pos)
-        unit_times[:] = repaired
 
     def _finalize_line_end_times(self, lines: list[AlignmentLine], max_time: float) -> None:
         if not lines:
             return
-        for idx, line in enumerate(lines):
-            next_start = lines[idx + 1].start_time if idx + 1 < len(lines) else max_time
+        for line in lines:
             candidate_end = line.end_time if line.end_time is not None else line.start_time
+            if line.aligned_units:
+                candidate_end = max(candidate_end, *(unit.end_time for unit in line.aligned_units))
             if candidate_end < line.start_time:
                 candidate_end = line.start_time
-            if next_start > line.start_time:
-                candidate_end = max(candidate_end, next_start)
             line.end_time = candidate_end
-            if line.aligned_units:
-                first_start = line.aligned_units[0].start_time
-                natural_end = line.aligned_units[-1].end_time
-                if natural_end < candidate_end and natural_end > first_start:
-                    # Proportionally scale all unit timestamps so the gap is
-                    # distributed across syllables instead of piling onto the last one.
-                    scale = (candidate_end - first_start) / (natural_end - first_start)
-                    for unit in line.aligned_units:
-                        unit.start_time = first_start + (unit.start_time - first_start) * scale
-                        unit.end_time = first_start + (unit.end_time - first_start) * scale
-                prev_end = line.start_time
-                for unit in line.aligned_units:
-                    if unit.start_time < prev_end:
-                        unit.start_time = prev_end
-                    if unit.end_time < unit.start_time:
-                        unit.end_time = unit.start_time
-                    prev_end = unit.end_time
 
     def _coerce_float(self, value: Any, default: float) -> float:
         try:
@@ -431,7 +339,7 @@ class SequenceAlignmentSupport:
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         methods = Counter(line.method for line in lines)
-        confidences = [line.confidence for line in lines if line.confidence > 0]
+        confidences = [line.confidence for line in lines if line.raw_text.strip() and not line.metadata.get("is_structural")]
         average_confidence = (sum(confidences) / len(confidences)) if confidences else 0.0
         confidence_buckets = {
             "high": sum(1 for c in confidences if c > 0.7),

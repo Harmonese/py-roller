@@ -26,6 +26,7 @@ class BatchTaskResult:
     cleaned: bool = False
     artifact_paths: dict[str, str] = field(default_factory=dict)
     error: dict[str, Any] | None = None
+    quality: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)

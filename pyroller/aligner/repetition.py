@@ -145,7 +145,7 @@ def _local_align_span(
         left_symbol = str(lyric_symbols[i - 1])
         for j in range(1, n + 1):
             right_symbol = audio_symbols[j - 1]
-            similarity = symbol_similarity(left_symbol, right_symbol)
+            similarity = symbol_similarity(left_symbol, right_symbol) * float(global_units[audio_start + j - 1].get("confidence", 1.0))
             diag = dp[i - 1][j - 1] + ((2.0 * similarity) - 0.75)
             up = dp[i - 1][j] + gap_penalty
             left = dp[i][j - 1] + gap_penalty
@@ -166,7 +166,7 @@ def _local_align_span(
     while i > 0 or j > 0:
         move = back[i][j]
         if move == "diag" and i > 0 and j > 0:
-            similarity = symbol_similarity(str(lyric_symbols[i - 1]), audio_symbols[j - 1])
+            similarity = symbol_similarity(str(lyric_symbols[i - 1]), audio_symbols[j - 1]) * float(global_units[audio_start + j - 1].get("confidence", 1.0))
             if similarity >= min_match_similarity:
                 audio_pos = audio_start + j - 1
                 unit = global_units[audio_pos]
@@ -367,6 +367,9 @@ def select_best_candidate_path(
             )
             for candidate in candidates:
                 if candidate.audio_start <= state.last_audio_end:
+                    continue
+                # Skipped lyric lines do not remove the last timing boundary.
+                if state.last_time is not None and candidate.start_time < state.last_time:
                     continue
                 transition = _transition_score(
                     previous_candidate,

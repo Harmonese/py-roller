@@ -48,23 +48,28 @@ def resolve_parser_language(language: str) -> str:
 
 def list_available_parser_backends(language: str) -> tuple[str, ...]:
     effective_language = resolve_parser_language(language)
-    backend = _DEFAULT_PARSER_BY_LANGUAGE[effective_language]
-    return (backend,)
+    from pyroller.config_contracts import PARSER_LANGUAGES
+    return tuple(name for name in _PARSER_FACTORIES if effective_language in PARSER_LANGUAGES[name])
 
 
 def resolve_parser_backend(language: str) -> str:
     return _DEFAULT_PARSER_BY_LANGUAGE[resolve_parser_language(language)]
 
 
-def get_parser_requirements(language: str) -> tuple[str, ...]:
-    backend = resolve_parser_backend(language)
+def get_parser_requirements(language: str, backend_name: str | None = None) -> tuple[str, ...]:
+    backend = backend_name or resolve_parser_backend(language)
     return _PARSER_REQUIREMENTS.get(backend, ())
 
 
 def get_lyrics_parser(language: str, config: dict[str, Any] | None = None) -> LyricsParser:
     effective_language = resolve_parser_language(language)
-    backend_name = _DEFAULT_PARSER_BY_LANGUAGE[effective_language]
+    backend_name = (config or {}).get("backend") or _DEFAULT_PARSER_BY_LANGUAGE[effective_language]
+    allowed = {"zh": {"zh_pinyin", "zh_router_pinyin"}, "en": {"en_arpabet"}, "mul": {"mul_ipa"}}
+    if backend_name not in allowed[effective_language]:
+        raise ValueError(f"Unsupported parser {backend_name} for {effective_language}")
     factory = _PARSER_FACTORIES[backend_name]
+    from pyroller.config_contracts import check_options, constructor_options
+    check_options(dict(config or {}), constructor_options(factory), "parser")
     init_config = {key: value for key, value in dict(config or {}).items() if value is not None}
     init_config.pop("backend", None)
     signature = inspect.signature(factory.__init__)

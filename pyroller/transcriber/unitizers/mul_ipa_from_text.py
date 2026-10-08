@@ -4,7 +4,7 @@ from pyroller.domain import TimedUnit
 from pyroller.transcriber.engine_types import EngineOutput, EngineSpan
 from pyroller.transcriber.protocol import build_unit_trace_metadata
 from pyroller.transcriber.unitizers.base import TranscriptionAdapter
-from pyroller.transcriber.unitizers.common import preferred_text_spans
+from pyroller.transcriber.unitizers.common import preferred_text_spans, span_confidence
 from pyroller.utils.ids import make_id
 from pyroller.utils.text import multilingual_text_to_ipa_units
 
@@ -15,6 +15,7 @@ class MulIpaFromTextUnitizer(TranscriptionAdapter):
 
     def __init__(self, *, backend: str = "faster_whisper") -> None:
         self.backend = backend
+        self.latin_language = None
 
     def _unitize(self, engine_output: EngineOutput, *, language: str, tone_mode: str) -> list[TimedUnit]:
         units: list[TimedUnit] = []
@@ -24,7 +25,7 @@ class MulIpaFromTextUnitizer(TranscriptionAdapter):
 
     def _text_span_to_units(self, span: EngineSpan, *, language: str) -> list[TimedUnit]:
         text = span.text or ""
-        phones = multilingual_text_to_ipa_units(text)
+        phones = multilingual_text_to_ipa_units(text, self.latin_language)
         if not phones:
             return []
 
@@ -51,7 +52,7 @@ class MulIpaFromTextUnitizer(TranscriptionAdapter):
                     tone=phone.get("stress"),
                     start_time=unit_start,
                     end_time=unit_end,
-                    confidence=float(span.confidence) if span.confidence is not None else None,
+                    confidence=span_confidence(span),
                     source_backend=self.backend,
                     raw_tokens=[str(phone.get("source_word") or symbol)],
                     metadata=build_unit_trace_metadata(

@@ -5,6 +5,8 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
+.claude/
 .coverage
 .mypy_cache/
 .DS_Store

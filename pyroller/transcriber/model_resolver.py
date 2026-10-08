@@ -11,7 +11,8 @@ from typing import Any
 
 from pyroller.progress import StageProgress
 from pyroller.transcriber.hf_download_config import HFDownloadConfig, hf_download_environment
-from pyroller.utils.json import json_default
+from pyroller.utils.json import json_default, write_json
+from pyroller.utils.files import file_lock
 
 logger = logging.getLogger("pyroller.transcriber")
 
@@ -297,16 +298,17 @@ class TranscriberModelResolver:
 
     def _write_manifest(self, plan: TranscriberResolutionPlan) -> None:
         manifest_path = self.model_store_root / "manifests" / "transcriber-index.json"
-        data: dict[str, Any] = {}
-        if manifest_path.exists():
-            try:
-                data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except Exception:
-                data = {}
-        models = data.setdefault("models", {})
-        key = f"{plan.backend}:{plan.effective_model_name}"
-        models[key] = plan.runtime_record()
-        manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=json_default), encoding="utf-8")
+        with file_lock(manifest_path.with_suffix(".lock")):
+            data: dict[str, Any] = {}
+            if manifest_path.exists():
+                try:
+                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except Exception:
+                    data = {}
+            models = data.setdefault("models", {})
+            key = f"{plan.backend}:{plan.effective_model_name}"
+            models[key] = plan.runtime_record()
+            write_json(data, manifest_path)
 
 
 def transcriber_provider_environment(plan: TranscriberResolutionPlan):

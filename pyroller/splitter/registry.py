@@ -50,11 +50,7 @@ def sanitize_splitter_config(backend_name: str, config: dict[str, Any] | None) -
     filtered = {key: value for key, value in init_config.items() if key in accepted}
     ignored = sorted(set(init_config) - accepted)
     if ignored:
-        logger.info(
-            _("Ignoring backend-incompatible splitter option(s) for %s: %s"),
-            backend_name,
-            ", ".join(ignored),
-        )
+        raise ValueError(f"Unsupported splitter options: {ignored}")
     return filtered
 
 

@@ -57,9 +57,7 @@ def test_sanitize_transcriber_config_filters_unsupported_and_none_values() -> No
             "backend": "faster_whisper",
             "model_name": "turbo",
             "compute_type": "int8",
-            "target_sample_rate": 16000,
             "hf_proxy": None,
-            "extra": "ignored",
         },
     )
 
@@ -83,3 +81,8 @@ def test_build_transcriber_composes_engine_and_adapter_without_loading_model(tmp
     assert isinstance(transcriber, ComposedTranscriber)
     assert transcriber.backend_name == "faster_whisper"
     assert transcriber.adapter.backend == "faster_whisper"
+
+
+def test_unknown_transcriber_options_are_rejected():
+    with pytest.raises(ValueError, match="Unsupported"):
+        sanitize_transcriber_config("faster_whisper", {"extra": "typo"})

@@ -31,6 +31,8 @@ SUPPORTED_LANGUAGES = {"zh", "en", "mul"}
 
 
 def resolve_execution_plan(request: PipelineRequest) -> list[str]:
+    if not isinstance(request.stages, list) or any(not isinstance(stage, str) for stage in request.stages):
+        raise ValueError("stages must be a list of strings")
     canonical: list[str] = []
     seen: set[str] = set()
     for raw in request.stages:
@@ -52,7 +54,9 @@ def resolve_execution_plan(request: PipelineRequest) -> list[str]:
 
 
 def resolve_language(requested_language: str) -> str:
-    normalized = (requested_language or "").strip().lower()
+    if not isinstance(requested_language, str):
+        raise ValueError("language must be a string")
+    normalized = requested_language.strip().lower()
     if normalized in SUPPORTED_LANGUAGES:
         return normalized
     raise ValueError(

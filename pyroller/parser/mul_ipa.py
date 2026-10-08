@@ -9,14 +9,15 @@ from typing import Any
 from pyroller.domain import LyricLine, LyricUnit, LyricsDocument, ParsedLyrics
 from pyroller.parser.base import LyricsParser
 from pyroller.utils.ids import make_id
+from pyroller.language_diagnostics import route_warnings
 from pyroller.utils.text import multilingual_text_to_ipa_units, summarize_multilingual_routes
 
 logger = logging.getLogger("pyroller.parser")
 
 
 class MultilingualIPAParser(LyricsParser):
-    def __init__(self, **_: Any) -> None:
-        pass
+    def __init__(self, latin_language: str | None = None) -> None:
+        self.latin_language = latin_language
 
     def parse(self, lyrics_document: LyricsDocument, language: str, tone_mode: str) -> ParsedLyrics:
         del tone_mode
@@ -32,8 +33,8 @@ class MultilingualIPAParser(LyricsParser):
         logger.info("=" * 58)
 
         for line in lyrics_document.lines:
-            phones = multilingual_text_to_ipa_units(line.raw_text)
-            route_summary = summarize_multilingual_routes(line.raw_text)
+            phones = multilingual_text_to_ipa_units(line.raw_text, self.latin_language)
+            route_summary = summarize_multilingual_routes(line.raw_text, self.latin_language)
             total_routes.update(route_summary["route_counts"])
             total_languages.update(route_summary["language_counts"])
             total_segments += len(route_summary["segments"])
@@ -51,6 +52,7 @@ class MultilingualIPAParser(LyricsParser):
                         tone=phone.get("stress"),
                         line_index=line.line_index,
                         unit_index_in_line=idx,
+                        source_text_span=phone.get("source_text_span"),
                         metadata={
                             "raw_text": line.raw_text,
                             "normalized_text": normalized,
@@ -93,6 +95,7 @@ class MultilingualIPAParser(LyricsParser):
             lines=parsed_lines,
             unit_type="ipa_phone",
             metadata={
+                "language_warnings": [warning for line in parsed_lines for warning in route_warnings(line.raw_text, line.metadata["route_summary"])],
                 "line_count": len(parsed_lines),
                 "route_counts": dict(total_routes),
                 "language_counts": dict(total_languages),

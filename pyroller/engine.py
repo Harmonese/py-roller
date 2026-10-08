@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,6 @@ from pyroller.pipeline.validation import validate_pipeline_request
 from pyroller.transcriber.hf_download_config import HFDownloadConfig
 from pyroller.transcriber.model_resolver import TranscriberModelResolver
 from pyroller.transcriber.registry import resolve_transcriber_backend
-from pyroller.utils.ids import make_id
 
 
 @dataclass(slots=True)
@@ -39,22 +38,17 @@ class EngineBatchResult:
     report: dict[str, Any]
 
 
-def prepare_single_run_request(request: PipelineRequest) -> PipelineRequest:
-    return replace(request, intermediate_dir=request.intermediate_dir / make_id("run"))
-
-
 def run_protocol_request(
     request: PipelineRequest,
     *,
     progress_reporter: ProgressReporter | None = None,
     progress_format: str = "jsonl",
 ) -> EngineRunResult:
-    effective_request = prepare_single_run_request(request)
-    log_file = batch_task_log_file(effective_request.intermediate_dir)
-    configure_logging(level=effective_request.log_level, log_file=log_file)
+    effective_request = request
     runner = ComposablePipelineRunner(progress_reporter=progress_reporter or build_cli_progress_reporter(progress_format))
     try:
         result = runner.run(effective_request)
+        effective_request = runner.last_request
     finally:
         runner.close()
     return EngineRunResult(

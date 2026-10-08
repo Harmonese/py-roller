@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import math
+from pyroller.utils.files import atomic_path
 
 from pyroller.i18n import _
 from pathlib import Path
@@ -29,6 +31,15 @@ class DereverbFilter(AudioFilter):
         max_abs_amplitude: float = 0.999,
         **_: Any,
     ) -> None:
+        for key, value, minimum in (("stft_size", stft_size, 128), ("stft_shift", stft_shift, 32),
+                                    ("taps", taps, 1), ("delay", delay, 0), ("iterations", iterations, 1),
+                                    ("psd_context", psd_context, 0)):
+            if type(value) is not int or value < minimum:
+                raise ValueError(f"{key} must be an integer >= {minimum}")
+        if stft_shift > stft_size or type(clip_output) is not bool or statistics_mode not in {"full", "valid"}:
+            raise ValueError("Invalid dereverb STFT, clipping, or statistics mode")
+        if not math.isfinite(max_abs_amplitude) or not 0 < max_abs_amplitude <= 1:
+            raise ValueError("max_abs_amplitude must be in (0, 1]")
         self.stft_size = max(128, int(stft_size))
         self.stft_shift = max(32, int(stft_shift))
         self.taps = max(1, int(taps))
@@ -37,7 +48,7 @@ class DereverbFilter(AudioFilter):
         self.psd_context = max(0, int(psd_context))
         self.statistics_mode = str(statistics_mode)
         self.clip_output = bool(clip_output)
-        self.max_abs_amplitude = max(0.1, float(max_abs_amplitude))
+        self.max_abs_amplitude = float(max_abs_amplitude)
 
     def process(self, audio_artifact: AudioArtifact, output_dir: Path) -> AudioArtifact:
         try:
@@ -62,6 +73,8 @@ class DereverbFilter(AudioFilter):
             logger.warning(_("dereverb received empty audio at %s; forwarding unchanged"), source_path)
             return audio_artifact
 
+        if not np.isfinite(audio).all():
+            raise ValueError("Dereverb input contains non-finite samples")
         time_major = np.asarray(audio, dtype=np.float64)
         channel_major = time_major.T
         original_samples = int(channel_major.shape[1])
@@ -108,8 +121,11 @@ class DereverbFilter(AudioFilter):
 
         processed = dereverb.T.astype(audio.dtype, copy=False)
         output_dir.mkdir(parents=True, exist_ok=True)
-        destination = output_dir / f"{source_path.stem}.dereverb{source_path.suffix}"
-        sf.write(str(destination), processed, sample_rate)
+        destination = output_dir / f"{source_path.stem}.dereverb.wav"
+        if not np.isfinite(processed).all():
+            raise ValueError("Dereverb output contains non-finite samples")
+        with atomic_path(destination) as temporary:
+            sf.write(str(temporary), processed, sample_rate, subtype="FLOAT")
 
         output_peak = float(np.max(np.abs(dereverb))) if dereverb.size else 0.0
         logger.info(

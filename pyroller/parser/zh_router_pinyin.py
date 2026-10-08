@@ -9,6 +9,7 @@ from typing import Any
 from pyroller.domain import LyricLine, LyricUnit, LyricsDocument, ParsedLyrics
 from pyroller.parser.base import LyricsParser
 from pyroller.utils.ids import make_id
+from pyroller.language_diagnostics import route_warnings
 from pyroller.utils.text import segmented_zh_text_to_pinyin_units
 
 logger = logging.getLogger("pyroller.parser")
@@ -63,6 +64,7 @@ class ZhRouterPinyinParser(LyricsParser):
                         tone=syllable.get("tone"),
                         line_index=line.line_index,
                         unit_index_in_line=idx,
+                        source_text_span=syllable.get("source_text_span"),
                         metadata={
                             "raw_text": line.raw_text,
                             "normalized_text": normalized,
@@ -106,6 +108,7 @@ class ZhRouterPinyinParser(LyricsParser):
             lines=parsed_lines,
             unit_type="pinyin_syllable",
             metadata={
+                "language_warnings": [warning for line in parsed_lines for warning in route_warnings(line.raw_text, line.metadata["route_summary"])],
                 "tone_mode": tone_mode,
                 "line_count": len(parsed_lines),
                 "route_counts": dict(total_routes),

@@ -77,7 +77,7 @@ PYROLLER_LANG=zh py-roller --help    # Chinese
 PYROLLER_LANG=en py-roller --help    # English
 ```
 
-All user-facing strings are translated: CLI help, pipeline summaries, doctor reports, install progress, error messages, and argparse built-in strings.
+Localized messages cover: CLI help, pipeline summaries, doctor reports, install progress, error messages, and argparse built-in strings.
 
 ## Quick start
 
@@ -421,9 +421,16 @@ pip install "requests[socks]"
 
 ### VAD filtering
 
-faster-whisper VAD (Voice Activity Detection) filtering skips silent sections during transcription, reducing processing time by 20–40% for songs with pauses or instrumental breaks. It is enabled by default.
+faster-whisper VAD (Voice Activity Detection) filtering skips silent sections during transcription, which can reduce processing time for songs with pauses or instrumental breaks. The benefit depends on the audio and model; no fixed speedup is guaranteed. It is enabled by default.
 
-Disable VAD filtering if you need word-level timestamps for every segment, or if the VAD model is cutting audio too aggressively:
+VAD is a speech detector and can discard singing, especially in a full mix. If
+the transcription is empty, skips verses, or reports a very small
+`duration_after_vad` compared with `audio_duration`, retry with
+`--no-transcriber-vad-filter` and compare the quality report. A short runtime
+can mean that most vocals were discarded. See the measured examples in
+[the local validation report](docs/validation-2026-10-08.md).
+
+Word timestamps are requested with or without VAD. Disable VAD filtering if singing or quiet passages are being cut too aggressively:
 
 ```bash
 py-roller run \
@@ -438,6 +445,11 @@ py-roller run \
 ### GPU auto-detection
 
 When `--transcriber-device` is not explicitly set, `py-roller` automatically checks for an available CUDA GPU. If found, the transcriber defaults to `device=cuda` with `compute_type=float16` for significantly faster inference. This can be overridden with `--transcriber-device cpu` or `--transcriber-compute-type int8`.
+
+Without CUDA, the faster-whisper defaults are CPU and int8. The automatic
+selection does not enable Apple MPS; Apple Silicon does not imply GPU inference.
+Batch workers each need their own model memory. Measure one worker before
+increasing `--jobs`, especially on machines with 8 GB of shared memory.
 
 ### Model pre-download
 
@@ -516,7 +528,7 @@ py-roller batch \
 
 - `--jobs N`: maximum number of parallel workers.
 - `--continue-on-error`: keep processing remaining tasks after failures.
-- `--skip-existing`: skip tasks whose declared final outputs already exist.
+- `--skip-existing`: skip tasks only when a completion receipt verifies the input bytes, configuration, and declared output bytes. Existing files alone are not sufficient.
 - `--manifest jobs.json` or `--manifest jobs.yaml`: load explicit per-task paths from JSON/YAML instead of pairing by stem.
 
 Parallelism guidance:
@@ -690,10 +702,12 @@ In single-task `run`, human progress is shown as terminal logs/progress bars whe
 Intermediate files live under:
 
 ```text
---intermediate/<task-id>/splitter
---intermediate/<task-id>/filter
---intermediate/<task-id>/logs
+--intermediate/run-<unique-id>/splitter
+--intermediate/run-<unique-id>/filter
+--intermediate/run-<unique-id>/logs
 ```
+
+Batch tasks place their unique `run-*` directories under their task-specific intermediate root. Each execution owns only its newly allocated directory. Existing directories are never adopted for cleanup.
 
 Default intermediate root:
 
@@ -781,3 +795,141 @@ ps -ef | grep -E 'pyroller|demucs'
 - SOCKS proxy support is installed by default through `requests[socks]`, so Hugging Face downloads do not fail merely because PySocks is missing.
 
 If you upgrade or override audio/transcriber packages manually, run `py-roller doctor` before using transcription-heavy pipelines.
+
+## Reliability and quality controls (unreleased)
+
+Every execution, including direct `ComposablePipelineRunner.run()` calls and batch
+workers, allocates a unique `run-*` child of `intermediate`. Existing directories
+and ownership markers are never adopted for recursive deletion. `cleanup=never`
+and failed runs retain their execution directory and log. Successful cleanup
+removes only that execution's scratch directory. Keep final output paths explicit;
+inputs and outputs must not alias, and batch outputs cannot overwrite another
+task's inputs. Manifest IDs must be single safe path components.
+
+ASS export now maps pronunciation units back to original lyric spans, preserving
+traditional characters, words, spaces and punctuation. Several phonemes belonging
+to one word share a single displayed word. Matching timestamps are not stretched
+through instrumental breaks; intra-line pauses are emitted as empty karaoke timing
+tags. Old alignment artifacts whose unit text does not reconstruct the original
+line are exported as plain original text, without guessed phoneme karaoke. Rerun
+parsing and alignment to obtain the new span mapping. Alignment `end_time` now
+represents the natural performance end; display duration is computed by the writer.
+
+Protocol v1 envelopes and execution status values are retained. Final run reports
+and batch task results add `quality`; `alignment_result.report.quality` carries the
+same diagnostics. `quality.status` is `ok` or `degraded`, and `needs_review` flags
+results below the configured thresholds. Metrics include lyric unit coverage
+(averaged over non-structural lines), matched-line ratio, interpolated-line ratio,
+longest unmatched interval in seconds, and language warnings. Overall confidence
+includes zero-confidence lyric lines. These scores are diagnostics, not calibrated
+probabilities or proof of acoustic timing accuracy.
+
+```bash
+py-roller run --stages a,w --timed-units song.timed.json \
+  --parsed-lyrics song.parsed.json --output-roller song.ass \
+  --writer-backend ass_karaoke --quality-mode strict \
+  --quality-min-coverage 0.8 --quality-max-interpolated-ratio 0.2 \
+  --quality-max-unmatched-seconds 10
+```
+
+The default quality mode is `report`, which exports drafts with diagnostics.
+`strict` rejects unreliable alignment before publishing alignment/writer outputs,
+using error code `alignment_quality_failed`. In JSON requests, configure this via
+`backend_config.quality` with keys `mode`, `min_coverage`,
+`max_interpolated_ratio`, and `max_unmatched_seconds`. Frontends should inspect
+`quality.needs_review` independently of the top-level execution `status` and allow
+additional fields and task-tagged stage events.
+
+Chinese text transcription and the default Chinese parser share the same mixed
+text/number routing. Approximate borrowed pronunciations are reported. Multilingual
+routing reports unsupported text (including Japanese/Korean when no route is
+implemented) rather than silently treating missing units as successful coverage.
+Latin script alone does not identify a language: the default English assumption
+is reported. Use `--language mul --latin-language fr` (also `en`, `de`, `es`, `it`,
+`pt`) to select it explicitly; a missing pronunciation backend is still reported
+as unsupported. JSON clients use `backend_config.parser.latin_language` for a
+pipeline including parsing; this also configures text transcription. For a
+transcription-only run, use `backend_config.transcriber.latin_language`.
+This option does not install pronunciation engines or add Japanese/Korean support.
+
+Second-round timing checks preserve matched unit timestamps during gap filling.
+Missing lyric units use only available gaps; when no gap exists they remain at a
+zero-width boundary with zero confidence and `timing_source: unresolved`.
+Aligned units carry `match_status`, `timing_source` and `timing_provenance`.
+The source is `acoustic`, `interpolated`, `unresolved` or `unknown`; acoustic
+provenance describes the source of timing, not measured alignment accuracy.
+Multilingual Chinese IPA retains per-character source spans for karaoke.
+
+Quality reports now include `timing_source_counts`, `interpolated_unit_ratio`,
+`acoustic_unit_ratio`, `unresolved_unit_ratio`, `unknown_timing_unit_ratio`,
+`timing_needs_review` and `unit_timing_diagnostics`.
+Reports also include `timing_anomaly_unit_count` and `missing_unit_timing_lines`;
+overlapping or zero-duration units require timing review without moving anchors.
+The default
+`--quality-timing-policy unit` requires review for estimated, unresolved or
+unknown unit timing, even when text coverage is complete. With
+`--quality-mode strict`, these results are rejected. Use `--quality-timing-policy line` for a
+line-level draft: text/line quality checks still apply and unit diagnostics remain
+visible. JSON uses `backend_config.quality.timing_policy`; YAML uses
+`quality_timing_policy`. Protocol v1 and its execution statuses are unchanged.
+Legacy artifacts without provenance are explicitly classified as unknown.
+
+When word timestamps cover only part of a segment, the entire segment text is
+retained using segment-based timing with an `incomplete_word_coverage` warning.
+This deliberately sacrifices word precision for that segment instead of silently
+omitting text. Artifact loading, saving and both writers reject unit times outside
+their declared line interval or with decreasing starts. Observed overlaps are
+preserved rather than shifted.
+
+`--skip-existing` now requires a verified completion receipt matching input bytes,
+configuration and output bytes. Mere file existence is insufficient. Receipts are
+hidden `.OUTPUT.pyroller-complete.json` files beside the first declared output.
+Missing, modified or empty outputs are rerun. This provides whole-task restart,
+not arbitrary stage checkpoint restoration. A worker pool exit produces terminal
+failure reports for tasks without confirmed results; rerun with `--skip-existing`
+to retain completed work. Serial and parallel batches forward stage events with
+`task_id`. Model index updates use a cross-process lock and atomic replacement.
+
+Filter parameters are supplied using `backend_config.filter.steps`, or through
+`--filter-steps` / YAML `filter_steps`:
+
+```bash
+py-roller run --stages f --audio vocals.wav --filter-chain noise_gate \
+  --filter-steps '{"noise_gate":{"ramp_ms":5,"threshold_percentile":20}}' \
+  --output-filtered-audio filtered.wav
+```
+
+Filters use floating-point WAV intermediates, preserve sample count, and reject
+non-finite samples. The noise gate measures channel energy without phase
+cancellation and smooths gate transitions. Unknown backend options and invalid
+artifact timing/index/type data now fail explicitly. `capabilities` discovers CLI
+options from the actual parser and adds `backend_schemas` for backend parameters,
+language compatibility, quality thresholds and supported choices.
+
+Alignment artifacts must use the same line timestamp for `assigned_time` and
+`start_time` (within 1e-9 seconds), and both sequences must be chronological.
+Conflicting imported artifacts are rejected before output publication. ASS export
+preserves observed line endings even when adjacent lyrics overlap; inferred
+display durations alone are limited by the next line. Batch collision checks
+include the automatically generated completion receipt paths.
+
+## Validation and practical limits
+
+See [the 2026-10-08 local validation report](docs/validation-2026-10-08.md) for
+real-library examples, repetition regressions, language probes, model comparisons,
+and long-sequence measurements. These are sample observations, not accuracy
+claims for all music or hardware. Existing LRC files provide line-level references;
+they do not establish word/phoneme timing accuracy.
+
+For a first CPU evaluation, `--transcriber-model-name small` reduces the model
+load compared with the default `large-v2`; compare recognition and alignment
+quality before adopting it. `--language mul` leaves ASR language detection to the
+model, which can be wrong on long instrumental introductions. Check the stored
+transcription's `detected_language` and text before tuning the aligner.
+
+The standard aligner uses a matrix proportional to lyric units × audio units.
+The `full` repetition mode additionally searches many candidate spans and can be
+much slower than `none` or `few`. It is intended for difficult repetition, not as
+a universal accuracy preset. Pronunciation routes also depend on installed
+language resources: selecting a Latin language does not install its pronunciation
+backend, and GUI translations do not imply audio/lyric support for that language.

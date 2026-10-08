@@ -21,12 +21,11 @@ def format_lrc_compact_timestamp(seconds: float, decimals: int = 2) -> str:
 
 
 def format_ass_timestamp(seconds: float) -> str:
-    safe_seconds = _safe_seconds(seconds)
-    hours = int(safe_seconds // 3600)
-    remainder = safe_seconds - (hours * 3600)
-    minutes = int(remainder // 60)
-    secs = remainder - (minutes * 60)
-    return f"{hours:d}:{minutes:02d}:{secs:05.2f}"
+    ticks = seconds_to_centiseconds(_safe_seconds(seconds))
+    hours, remainder = divmod(ticks, 360000)
+    minutes, remainder = divmod(remainder, 6000)
+    secs, fraction = divmod(remainder, 100)
+    return f"{hours:d}:{minutes:02d}:{secs:02d}.{fraction:02d}"
 
 
 def seconds_to_centiseconds(seconds: float) -> int:

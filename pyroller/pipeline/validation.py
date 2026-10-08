@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pyroller.domain import PipelineRequest
+from pyroller.config_contracts import validate_configs
 from pyroller.i18n import _
 from pyroller.pipeline.stages import (
     format_missing_inputs,
@@ -9,13 +10,15 @@ from pyroller.pipeline.stages import (
     resolve_language,
     validate_contiguous_stage_chain,
 )
-from pyroller.transcriber.registry import get_transcriber_config_keys, resolve_transcriber_backend
 
 
 def validate_pipeline_request(request: PipelineRequest, stages: list[str]) -> None:
     if not stages:
         raise ValueError(_("At least one stage is required. Use --stages s,f,t,p,a,w or a subset."))
     resolve_language(request.language)
+    if request.cleanup not in {"on-success", "never"}:
+        raise ValueError("Invalid cleanup policy")
+    validate_configs(request)
     validate_contiguous_stage_chain(stages)
 
     first_stage = stages[0]
@@ -84,101 +87,12 @@ def validate_pipeline_request(request: PipelineRequest, stages: list[str]) -> No
 
 
 def validate_stage_specific_options(request: PipelineRequest, stages: list[str]) -> None:
-    splitter_cfg = dict(request.backend_config.get("splitter", {}))
-    filter_cfg = dict(request.backend_config.get("filter", {}))
-    transcriber_cfg = dict(request.backend_config.get("transcriber", {}))
-    aligner_cfg = dict(request.backend_config.get("aligner", {}))
-    writer_cfg = dict(request.backend_config.get("writer", {}))
-
-    if "splitter" not in stages:
-        splitter_flags = {
-            "backend": "--splitter-backend",
-            "model": "--splitter-demucs-model",
-            "device": "--splitter-demucs-device",
-            "jobs": "--splitter-demucs-jobs",
-            "overlap": "--splitter-demucs-overlap",
-            "segment": "--splitter-demucs-segment",
-        }
-        used = [flag for key, flag in splitter_flags.items() if key in splitter_cfg]
-        if used:
-            joined = ", ".join(used)
-            raise ValueError(_("{} {} only allowed when the selected stage chain includes 's'/'splitter'.").format(joined, _("is") if len(used) == 1 else _("are")))
-    if "filter" not in stages and "chain" in filter_cfg:
-        raise ValueError(_("--filter-chain is only allowed when the selected stage chain includes 'f'/'filter'."))
-    if "transcriber" not in stages:
-        transcriber_flags = {
-            "backend": "--transcriber-backend",
-            "device": "--transcriber-device",
-            "model_name": "--transcriber-model-name",
-            "model_path": "--transcriber-model-path",
-            "local_files_only": "--transcriber-local-files-only",
-            "hf_xet": "--transcriber-hf-xet",
-            "hf_proxy": "--transcriber-hf-proxy",
-            "hf_etag_timeout": "--transcriber-hf-etag-timeout",
-            "hf_download_timeout": "--transcriber-hf-download-timeout",
-            "hf_max_workers": "--transcriber-hf-max-workers",
-            "compute_type": "--transcriber-compute-type",
-            "batch_size": "--transcriber-batch-size",
-            "vad_filter": "--transcriber-vad-filter",
-        }
-        used = [flag for key, flag in transcriber_flags.items() if key in transcriber_cfg]
-        if used:
-            joined = ", ".join(used)
-            raise ValueError(_("{} {} only allowed when the selected stage chain includes 't'/'transcriber'.").format(joined, _("is") if len(used) == 1 else _("are")))
-    if "aligner" not in stages:
-        aligner_flags = {
-            "backend": "--aligner-backend",
-            "min_gap": "--aligner-min-gap",
-            "repetition": "--aligner-repetition",
-        }
-        used = [flag for key, flag in aligner_flags.items() if key in aligner_cfg]
-        if used:
-            joined = ", ".join(used)
-            raise ValueError(_("{} {} only allowed when the selected stage chain includes 'a'/'aligner'.").format(joined, _("is") if len(used) == 1 else _("are")))
-    if "writer" not in stages:
-        writer_flags = {
-            "backend": "--writer-backend",
-            "spacing": "--writer-spacing",
-            "by_tag": "--writer-by-tag",
-            "tag_type": "--writer-ass-karaoke-tag-type",
-        }
-        used = [flag for key, flag in writer_flags.items() if key in writer_cfg]
-        if used:
-            joined = ", ".join(used)
-            raise ValueError(_("{} {} only allowed when the selected stage chain includes 'w'/'writer'.").format(joined, _("is") if len(used) == 1 else _("are")))
-    if "transcriber" in stages:
-        _resolved_language, chosen_transcriber_backend = resolve_transcriber_backend(
-            resolve_language(request.language),
-            str(transcriber_cfg.get("backend")) if transcriber_cfg.get("backend") else None,
-        )
-        transcriber_flags = {
-            "backend": "--transcriber-backend",
-            "device": "--transcriber-device",
-            "model_name": "--transcriber-model-name",
-            "model_path": "--transcriber-model-path",
-            "local_files_only": "--transcriber-local-files-only",
-            "hf_xet": "--transcriber-hf-xet",
-            "hf_proxy": "--transcriber-hf-proxy",
-            "hf_etag_timeout": "--transcriber-hf-etag-timeout",
-            "hf_download_timeout": "--transcriber-hf-download-timeout",
-            "hf_max_workers": "--transcriber-hf-max-workers",
-            "compute_type": "--transcriber-compute-type",
-            "batch_size": "--transcriber-batch-size",
-            "vad_filter": "--transcriber-vad-filter",
-        }
-        accepted_transcriber_keys = get_transcriber_config_keys(chosen_transcriber_backend)
-        incompatible = [
-            transcriber_flags[key]
-            for key in transcriber_flags
-            if key != "backend" and key in transcriber_cfg and key not in accepted_transcriber_keys
-        ]
-        if incompatible:
-            joined = ", ".join(incompatible)
-            raise ValueError(
-                _("{} {} not supported by --transcriber-backend {!r}.").format(joined, _("is") if len(incompatible) == 1 else _("are"), chosen_transcriber_backend)
-            )
-
+    for stage, config in request.backend_config.items():
+        if stage != "quality" and config and stage not in stages:
+            raise ValueError(f"{stage} options require the {stage} stage")
+    writer = request.backend_config.get("writer", {})
     if "writer" in stages:
-        chosen_writer_backend = str(writer_cfg.get("backend") or "lrc_ms")
-        if writer_cfg.get("tag_type") is not None and chosen_writer_backend != "ass_karaoke":
-            raise ValueError(_("--writer-ass-karaoke-tag-type is only allowed when --writer-backend is 'ass_karaoke'."))
+        if writer.get("backend", "lrc_ms") != "ass_karaoke" and any(key in writer for key in ("tag_type", "unmatched_line_duration")):
+            raise ValueError("ASS timing options require writer backend ass_karaoke")
+        from pyroller.writer.registry import build_writer
+        build_writer(writer.get("backend"), writer)

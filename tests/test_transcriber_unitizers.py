@@ -40,6 +40,8 @@ def _engine_output() -> EngineOutput:
                 segment_index=3,
                 word_index=0,
             ),
+            EngineSpan('word:1', 'word', 1.0, 2.0, text='world', confidence=0.9,
+                       segment_index=3, word_index=1),
         ],
         metadata={"custom": "value"},
     )
@@ -86,7 +88,7 @@ def test_english_arpabet_unitizer_adapts_word_spans_to_timed_units() -> None:
     assert result.raw_segments[0]["segment_level"] == "segment"
     assert [unit.normalized_symbol for unit in result.units[:4]] == ["HH", "AH", "L", "OW"]
     assert result.units[0].start_time == 0.0
-    assert result.units[-1].end_time == 1.0
+    assert result.units[-1].end_time == 2.0
     assert result.units[0].metadata["timing_mode"] == "interpolated_from_word"
     assert result.metadata["unitizer"] == "en_arpabet"
     assert result.metadata["unit_timing_semantics"] == "interpolated_non_acoustic"

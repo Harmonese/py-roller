@@ -27,10 +27,10 @@ def test_write_and_read_json_round_trip_with_paths(tmp_path) -> None:
 def test_write_artifact_json_wraps_payload(tmp_path) -> None:
     path = tmp_path / "artifact.json"
 
-    write_artifact_json("timed_units", {"units": []}, path)
+    write_artifact_json("timed_units", {"language": "zh", "units": []}, path)
 
     assert read_json(path) == {
         "schema_version": 1,
         "artifact_type": "timed_units",
-        "payload": {"units": []},
+        "payload": {"language": "zh", "units": []},
     }

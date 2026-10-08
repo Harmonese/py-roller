@@ -4,7 +4,7 @@ from pyroller.domain import TimedUnit
 from pyroller.transcriber.engine_types import EngineOutput, EngineSpan
 from pyroller.transcriber.protocol import build_unit_trace_metadata
 from pyroller.transcriber.unitizers.base import TranscriptionAdapter
-from pyroller.transcriber.unitizers.common import preferred_text_spans
+from pyroller.transcriber.unitizers.common import preferred_text_spans, span_confidence
 from pyroller.utils.ids import make_id
 from pyroller.utils.text import english_text_to_arpabet_units, normalize_english_text
 
@@ -48,7 +48,7 @@ class EnArpabetUnitizer(TranscriptionAdapter):
                     tone=phone.get("stress"),
                     start_time=unit_start,
                     end_time=unit_end,
-                    confidence=float(span.confidence) if span.confidence is not None else None,
+                    confidence=span_confidence(span),
                     source_backend=self.backend,
                     raw_tokens=[phone["symbol"]],
                     metadata=build_unit_trace_metadata(

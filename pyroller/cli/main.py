@@ -38,6 +38,14 @@ def _build_subparser_description(*, batch_mode: bool) -> str:
     return _("{}\n\n{}\n\n{}").format(io_line, detail, language_hint)
 
 def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode: bool) -> None:
+    from pyroller.config_contracts import QUALITY_OPTIONS, LATIN_LANGUAGES, PARSER_LANGUAGES, OPTION_RULES, WRITER_OPTIONS
+    parser.add_argument("--parser-backend", choices=list(PARSER_LANGUAGES), default=None, help=_("Explicit lyrics parser backend."))
+    parser.add_argument("--latin-language", choices=LATIN_LANGUAGES, default=None, help=_("Explicit Latin-script language for multilingual lyrics and transcription."))
+    for key, rule in QUALITY_OPTIONS.items():
+        parser.add_argument("--quality-" + key.replace("_", "-"), choices=rule.get("choices"),
+                            type=str if "choices" in rule else float, default=rule["default"],
+                            help=_("Alignment quality policy: {}").format(key))
+    parser.add_argument("--filter-steps", type=json.loads, default=None, help=_("JSON object of per-filter parameters, keyed by filter name."))
     stages_group = parser.add_argument_group(_("stages"))
     stages_group.add_argument(
         "--stages",
@@ -117,7 +125,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     aligner.add_argument("--aligner-min-gap", type=float, default=None, help=_("Minimum post-repair gap between aligned lyric lines, in seconds."))
     aligner.add_argument(
         "--aligner-repetition",
-        choices=["none", "few", "full"],
+        choices=OPTION_RULES["repetition"]["choices"],
         default=None,
         help=_(
             "Repetition handling mode. "
@@ -130,9 +138,9 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
 
     writer = parser.add_argument_group(_("writer options (stage w)"))
     writer.add_argument("--writer-backend", default=None, help=_("Writer backend override. Common values: lrc_ms, lrc_cs, lrc_compressed, ass_karaoke."))
-    writer.add_argument("--writer-spacing", choices=["keep", "drop"], default=None, help=_("Whether to keep structural blank lyric lines in writer output. Default: keep"))
+    writer.add_argument("--writer-spacing", choices=WRITER_OPTIONS["spacing"]["choices"], default=None, help=_("Whether to keep structural blank lyric lines in writer output. Default: keep"))
     writer.add_argument("--writer-by-tag", default=None, help=_("Value for writer metadata BY tag in LRC/ASS outputs."))
-    writer.add_argument("--writer-ass-karaoke-tag-type", choices=["k", "K", "kf", "ko"], default=None, help=_("ASS karaoke timing tag type when --writer-backend ass_karaoke. Default is writer-specific."))
+    writer.add_argument("--writer-ass-karaoke-tag-type", choices=WRITER_OPTIONS["tag_type"]["choices"], default=None, help=_("ASS karaoke timing tag type when --writer-backend ass_karaoke. Default is writer-specific."))
 
     runtime = parser.add_argument_group(_("runtime control"))
     runtime.add_argument(
@@ -180,7 +188,7 @@ def _add_shared_runlike_arguments(parser: argparse.ArgumentParser, *, batch_mode
     if batch_mode:
         batch = parser.add_argument_group(_("batch-only"))
         batch.add_argument("--continue-on-error", action="store_true", help=_("Keep processing remaining tasks after failures."))
-        batch.add_argument("--skip-existing", action="store_true", help=_("Skip tasks whose declared final outputs already exist."))
+        batch.add_argument("--skip-existing", action="store_true", help=_("Skip tasks only when completion receipts verify inputs, configuration, and outputs."))
         batch.add_argument("--pair-by", choices=["stem"], default="stem", help=_("Directory pairing strategy. Current supported value: stem."))
         batch.add_argument("--jobs", type=int, default=1, help=_("Maximum number of parallel batch workers. For audio pipelines, start with 1. Default: 1"))
         batch.add_argument("--audio-glob", default="*.mp3", help=_("Non-recursive glob for candidate audio files in batch mode. Default: *.mp3"))

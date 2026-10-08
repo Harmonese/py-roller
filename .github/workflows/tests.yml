@@ -32,3 +32,6 @@ jobs:
 
       - name: Run default test suite
         run: pytest --cov=pyroller --cov-report=term-missing
+
+      - name: Check locale coverage
+        run: python scripts/check_i18n.py --strict-untranslated

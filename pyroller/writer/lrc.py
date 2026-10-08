@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pyroller.utils.files import atomic_path
 
 from pyroller.i18n import _
 from collections import OrderedDict
@@ -32,9 +33,11 @@ class LRCWriter(Writer):
         return format_lrc_timestamp(seconds, decimals=self.decimals)
 
     def write(self, alignment: AlignmentResult, output_path: Path) -> WriteResult:
+        from pyroller.domain.validation import validate_payload
+        validate_payload(alignment.to_dict(), 'alignment_result')
         output_path.parent.mkdir(parents=True, exist_ok=True)
         written_line_count = 0
-        with output_path.open("w", encoding="utf-8") as f:
+        with atomic_path(output_path) as temporary, temporary.open("w", encoding="utf-8") as f:
             f.write("[ti:]\n[ar:]\n[al:]\n")
             f.write(f"[by:{self.by_tag}]\n\n")
             if self.compressed:

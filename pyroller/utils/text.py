@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter
-from typing import Optional
+from typing import Any, Optional
 
 from pyroller.i18n import _
 
@@ -44,11 +44,13 @@ _KNOWN_ARPABET_BASES = {
 _JOINER_CHARS = {"'", "’", "-", "_"}
 
 _GRUUT_LANGUAGE_MAP = {
+    "fr": "fr-fr", "de": "de-de", "es": "es-es", "it": "it-it", "pt": "pt",
     "en": "en-us",
     "ru": "ru-ru",
     "ar": "ar",
 }
 _ESPEAK_LANGUAGE_MAP = {
+    "fr": "fr-fr", "de": "de", "es": "es", "it": "it", "pt": "pt",
     "en": "en-us",
     "ru": "ru",
     "ar": "ar",
@@ -307,7 +309,7 @@ def split_pinyin_tone(syllable: str) -> tuple[str, Optional[str]]:
 
 
 
-def chinese_text_to_pinyin_syllables(text: str, tone_mode: str = "ignore") -> list[dict[str, Optional[str]]]:
+def chinese_text_to_pinyin_syllables(text: str, tone_mode: str = "ignore") -> list[dict[str, Any]]:
     if lazy_pinyin is None or Style is None:
         raise RuntimeError(_("pypinyin is required for Chinese parser/transcriber normalization."))
 
@@ -318,8 +320,10 @@ def chinese_text_to_pinyin_syllables(text: str, tone_mode: str = "ignore") -> li
     style = Style.TONE3 if tone_mode == "keep" else Style.NORMAL
     syllables = lazy_pinyin(normalized, style=style, neutral_tone_with_five=True)
 
-    results: list[dict[str, Optional[str]]] = []
-    for char, syllable in zip(normalized, syllables):
+    results: list[dict[str, Any]] = []
+    source_spans = [match.span() for match in re.finditer(r"\d+|.", text, re.DOTALL)
+                    for _ in normalize_chinese_text(match.group())]
+    for index, (char, syllable) in enumerate(zip(normalized, syllables)):
         base, tone = split_pinyin_tone(syllable)
         results.append(
             {
@@ -327,6 +331,7 @@ def chinese_text_to_pinyin_syllables(text: str, tone_mode: str = "ignore") -> li
                 "normalized_symbol": base if tone_mode == "ignore" else syllable,
                 "tone": tone,
                 "source_char": char,
+                "source_text_span": source_spans[index] if index < len(source_spans) else (0, len(text)),
             }
         )
     return results
@@ -387,7 +392,7 @@ def english_word_to_arpabet(word: str) -> list[str]:
 
 
 
-def english_text_to_arpabet_units(text: str) -> list[dict[str, Optional[str]]]:
+def english_text_to_arpabet_units(text: str) -> list[dict[str, Any]]:
     if text_looks_like_arpabet(text):
         tokens = arpabet_text_to_phone_tokens(text)
         return [
@@ -400,9 +405,10 @@ def english_text_to_arpabet_units(text: str) -> list[dict[str, Optional[str]]]:
             for token in tokens
         ]
 
-    words = _ENGLISH_WORD_RE.findall(text)
-    results: list[dict[str, Optional[str]]] = []
-    for word in words:
+    words = list(_ENGLISH_WORD_RE.finditer(text))
+    results: list[dict[str, Any]] = []
+    for match in words:
+        word = match.group()
         for token in english_word_to_arpabet(word):
             base, stress = split_arpabet_stress(token)
             results.append(
@@ -411,6 +417,7 @@ def english_text_to_arpabet_units(text: str) -> list[dict[str, Optional[str]]]:
                     "normalized_symbol": base,
                     "stress": stress,
                     "source_word": word,
+                    "source_text_span": match.span(),
                 }
             )
     return results
@@ -667,7 +674,7 @@ def pinyin_syllable_to_ipa_tokens(syllable: str) -> list[str]:
 
 
 
-def chinese_text_to_ipa_units(text: str) -> list[dict[str, Optional[str]]]:
+def chinese_text_to_ipa_units(text: str) -> list[dict[str, Any]]:
     syllables = chinese_text_to_pinyin_syllables(text, tone_mode="keep")
     results: list[dict[str, Optional[str]]] = []
     for syllable in syllables:
@@ -680,6 +687,7 @@ def chinese_text_to_ipa_units(text: str) -> list[dict[str, Optional[str]]]:
                     "normalized_symbol": normalize_ipa_phone(phone),
                     "stress": syllable.get("tone"),
                     "source_word": source_char,
+                    "source_text_span": syllable.get("source_text_span"),
                     "source_language": "zh",
                     "backend": "zh_dedicated",
                 }
@@ -693,6 +701,10 @@ def chinese_text_to_ipa_units(text: str) -> list[dict[str, Optional[str]]]:
 
 def _char_script_language(ch: str) -> Optional[str]:
     code = ord(ch)
+    if 0x3040 <= code <= 0x30FF:
+        return "ja"
+    if 0xAC00 <= code <= 0xD7AF or 0x1100 <= code <= 0x11FF:
+        return "ko"
     if 0x4E00 <= code <= 0x9FFF:
         return "zh"
     if 0x3400 <= code <= 0x4DBF:
@@ -703,11 +715,11 @@ def _char_script_language(ch: str) -> Optional[str]:
         return "ru"
     if "LATIN" in unicodedata.name(ch, ""):
         return "en"
-    return None
+    return "und" if ch.isalpha() else None
 
 
 
-def split_multilingual_text_segments(text: str) -> list[dict[str, object]]:
+def split_multilingual_text_segments(text: str, latin_language: str | None = None) -> list[dict[str, object]]:
     segments: list[dict[str, object]] = []
     buffer: list[str] = []
     current_language: Optional[str] = None
@@ -740,6 +752,10 @@ def split_multilingual_text_segments(text: str) -> list[dict[str, object]]:
             continue
 
         lang = _char_script_language(ch)
+        if lang == "en" and latin_language:
+            lang = latin_language
+        if lang == "zh" and any(0x3040 <= ord(c) <= 0x30FF for c in text):
+            lang = "ja"
         if lang is None:
             if buffer and current_language is not None and (ch.isdigit() or ch in _JOINER_CHARS):
                 buffer.append(ch)
@@ -771,17 +787,17 @@ def _route_segment_to_ipa_units(segment_text: str, language: str) -> tuple[list[
     if not segment_text.strip():
         return [], "empty"
 
+    # The Chinese route retains character boundaries and phrase pronunciation.
+    if language == "zh":
+        return chinese_text_to_ipa_units(segment_text), "dedicated"
+
     if language_supported_by_gruut(language):
         units = phonemize_text_with_gruut(segment_text, language)
         if units:
             return units, "gruut"
 
     try:
-        if language == "zh":
-            units = chinese_text_to_ipa_units(segment_text)
-            if units:
-                return units, "dedicated"
-        elif language == "en":
+        if language == "en":
             units = arpabet_text_to_ipa_units(segment_text)
             if units:
                 return units, "dedicated"
@@ -798,8 +814,8 @@ def _route_segment_to_ipa_units(segment_text: str, language: str) -> tuple[list[
 
 
 def multilingual_text_to_ipa_units(
-    text: str,
-) -> list[dict[str, Optional[str]]]:
+    text: str, latin_language: str | None = None,
+) -> list[dict[str, Any]]:
 
     if text_looks_like_ipa(text):
         tokens = ipa_text_to_phone_tokens(text)
@@ -816,8 +832,8 @@ def multilingual_text_to_ipa_units(
             if token.strip()
         ]
 
-    results: list[dict[str, Optional[str]]] = []
-    for segment_index, segment in enumerate(split_multilingual_text_segments(text)):
+    results: list[dict[str, Any]] = []
+    for segment_index, segment in enumerate(split_multilingual_text_segments(text, latin_language)):
         segment_text = str(segment["text"])
         segment_language = str(segment["language"])
         segment_units, route = _route_segment_to_ipa_units(segment_text, segment_language)
@@ -825,6 +841,9 @@ def multilingual_text_to_ipa_units(
             merged = dict(unit)
             merged.setdefault("source_language", segment_language)
             merged.setdefault("backend", route)
+            local_span = unit.get("source_text_span")
+            merged["source_text_span"] = ((int(segment["start"]) + local_span[0], int(segment["start"]) + local_span[1])
+                                          if local_span is not None else (int(segment["start"]), int(segment["end"])))
             merged["segment_language"] = segment_language
             merged["segment_text"] = segment_text
             merged["segment_index"] = segment_index
@@ -833,11 +852,11 @@ def multilingual_text_to_ipa_units(
 
 
 
-def summarize_multilingual_routes(text: str) -> dict[str, object]:
+def summarize_multilingual_routes(text: str, latin_language: str | None = None) -> dict[str, object]:
     route_counter: Counter[str] = Counter()
     language_counter: Counter[str] = Counter()
     segments_summary: list[dict[str, object]] = []
-    for segment in split_multilingual_text_segments(text):
+    for segment in split_multilingual_text_segments(text, latin_language):
         units, route = _route_segment_to_ipa_units(str(segment["text"]), str(segment["language"]))
         route_counter[route] += 1
         language_counter[str(segment["language"])] += 1
@@ -845,6 +864,7 @@ def summarize_multilingual_routes(text: str) -> dict[str, object]:
             {
                 "text": segment["text"],
                 "language": segment["language"],
+                "assumed_language": segment["language"] == "en" and latin_language is None,
                 "route": route,
                 "unit_count": len(units),
             }
@@ -1225,12 +1245,22 @@ def route_zh_segment_to_pinyin_units(
 def segmented_zh_text_to_pinyin_units(
     text: str,
     tone_mode: str = "ignore",
-) -> tuple[list[dict[str, Optional[str]]], dict[str, object]]:
+) -> tuple[list[dict[str, Any]], dict[str, object]]:
     route_counter: Counter[str] = Counter()
     segment_counter: Counter[str] = Counter()
     segments_summary: list[dict[str, object]] = []
-    results: list[dict[str, Optional[str]]] = []
+    results: list[dict[str, Any]] = []
 
+    source_map = []
+    previous = ""
+    for index in range(len(text)):
+        current = unicodedata.normalize("NFKC", text[:index + 1])
+        common = 0
+        while common < min(len(previous), len(current)) and previous[common] == current[common]:
+            common += 1
+        origin = source_map[common][0] if common < len(source_map) else index
+        source_map[common:] = [(origin, index + 1)] * (len(current) - common)
+        previous = current
     for segment_index, segment in enumerate(split_zh_router_segments(text)):
         segment_text = str(segment["text"])
         segment_type = str(segment["segment_type"])
@@ -1245,8 +1275,12 @@ def segmented_zh_text_to_pinyin_units(
                 "unit_count": len(units),
             }
         )
-        for unit in units:
+        for unit_index, unit in enumerate(units):
             merged = dict(unit)
+            start, end = int(segment["start"]), int(segment["end"])
+            if segment_type in {"han", "digit"} and len(units) == len(segment_text):
+                start, end = start + unit_index, start + unit_index + 1
+            merged["source_text_span"] = (source_map[start][0], source_map[end - 1][1])
             merged.setdefault("source_text", segment_text)
             merged.setdefault("backend", route)
             merged["segment_type"] = segment_type

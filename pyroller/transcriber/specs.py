@@ -34,6 +34,7 @@ _FASTER_WHISPER_CONFIG_KEYS = frozenset({
     "compute_type",
     "batch_size",
     "vad_filter",
+    "latin_language",
 }) | _HF_DOWNLOAD_CONFIG_KEYS
 
 _WAV2VEC2_CONFIG_KEYS = frozenset({
@@ -56,9 +57,21 @@ class TranscriberSpec:
     adapter_factory: AdapterFactory
 
     def compose(self, config: dict[str, Any]) -> ComposedTranscriber:
+        config = dict(config)
+        if "device" not in config:
+            from pyroller.transcriber.device import auto_detect_transcriber_device
+            device, compute = auto_detect_transcriber_device()
+            if device:
+                config["device"] = device
+                if self.backend == "faster_whisper":
+                    config.setdefault("compute_type", compute)
+        latin_language = config.pop("latin_language", None)
+        adapter = self.adapter_factory()
+        if hasattr(adapter, "latin_language"):
+            adapter.latin_language = latin_language
         return ComposedTranscriber(
             engine=self.engine_factory(config),
-            adapter=self.adapter_factory(),
+            adapter=adapter,
             backend_name=self.backend,
         )
 

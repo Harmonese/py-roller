@@ -26,7 +26,24 @@ class TranscriptionAdapter(ABC):
             raw_segment_level=raw_segment_spans[0].level if raw_segment_spans else "segment",
         )
         metadata["unit_timing_semantics"] = self.unit_timing_semantics
+        if self.name in {"zh_pinyin_from_text", "mul_ipa_from_text"}:
+            from pyroller.language_diagnostics import route_warnings
+            from pyroller.utils.text import summarize_multilingual_routes, summarize_zh_router_routes
+            text = engine_output.raw_text or ""
+            summary = (summarize_zh_router_routes(text) if language == "zh" else
+                       summarize_multilingual_routes(text, getattr(self, "latin_language", None)))
+            metadata["language_warnings"] = route_warnings(text, summary)
+        if self.name == "en_arpabet":
+            from pyroller.language_diagnostics import english_warnings
+            from pyroller.utils.text import english_text_to_arpabet_units
+            text = engine_output.raw_text or ""
+            metadata["language_warnings"] = english_warnings(text, english_text_to_arpabet_units(text))
         metadata.update(self._extra_result_metadata(engine_output))
+        from pyroller.transcriber.unitizers.common import preferred_text_spans
+        span_warnings = [span.metadata['text_span_warning'] for span in preferred_text_spans(engine_output)
+                         if 'text_span_warning' in span.metadata]
+        metadata['text_span_warnings'] = span_warnings
+        metadata.setdefault('language_warnings', []).extend(span_warnings)
         return TranscriptionResult(
             language=language,
             backend=self.backend,

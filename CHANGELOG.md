@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows Keep a Changelog and this project uses Semantic Versioning.
 
+## [Unreleased]
+
+## [0.9.0] - 2026-10-08
+
+### Release review fixes
+
+- Reserve batch completion receipt paths alongside outputs, rejecting collisions with inputs, other outputs and parent paths before any task starts.
+- Preserve observed ASS line endings across overlapping or adjacent lyrics; constrain only inferred display durations.
+- Round ASS timestamps in centiseconds before splitting hours, minutes and seconds so boundary values carry correctly.
+- Require alignment `assigned_time` to agree with `start_time` and remain chronological when loading, saving or exporting artifacts. Conflicting external artifacts now fail before replacing existing outputs.
+
+### Validation follow-up
+
+- Reject sparse repetition repairs that cross retained neighbouring matches; preserve beam timing boundaries across skipped lyric lines.
+- Cache up to 4096 symbol-pair similarity scores to avoid repeated string comparisons during alignment; matching scores and policies are unchanged.
+- Synchronize all eight locale catalogs, translate new CLI option help, and enforce strict locale coverage in CI.
+- Correct documentation for completion receipts, exclusive run directories, VAD behaviour and hardware/language limitations. Real-library validation results are recorded in `docs/validation-2026-10-08.md`.
+
+### Second-round alignment reliability
+
+- Preserve observed unit timing when interpolating missing lyrics; mark gaps without available time as unresolved.
+- Retain incomplete word-covered segments with explicit timing fallback diagnostics.
+- Carry timing provenance into alignment artifacts and add unit/line quality policies (unit is the default).
+- Preserve Chinese character spans through multilingual IPA and ASS export.
+- Validate cross-field unit timing on artifact load/save and LRC/ASS publication.
+
+### Fixed
+- Allocate exclusive run scratch directories; never adopt an existing directory for cleanup. Reject unsafe manifest IDs and input/output collisions.
+- Preserve original lyric text in ASS using source spans, including words with multiple phonemes, punctuation and traditional characters. Preserve natural timing and intra-line pauses.
+- Include unmatched lyric lines in confidence; weight symbol matching by available ASR confidence.
+- Share default Chinese normalization across lyrics and text transcription; retain segments lacking word timestamps and report unsupported/approximate language routes.
+- Detect worker pool exits, forward task stage progress, verify completion receipts, atomically publish outputs and lock model index updates.
+- Preserve noise-gate tails and phase-inverted channels, smooth transitions and wire per-filter configuration.
+- Validate artifact semantics and backend options; resolve CUDA defaults only when constructing a transcriber.
+
+### Added
+- Additive protocol v1 quality reports, configurable strict quality gates, explicit Latin language selection and backend capability schemas.
+- Regression tests covering real CLI/parser/alignment/ASS execution, worker crashes, concurrent model-index writes, cache invalidation and scratch-directory safety.
+
 ## [0.8.3] - 2026-06-16
 
 ### Fixed

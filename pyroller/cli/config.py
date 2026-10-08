@@ -8,11 +8,12 @@ from pyroller.i18n import _
 import yaml
 
 _SHARED_ALLOWED_KEYS = {
+    "quality_mode", "quality_timing_policy", "quality_min_coverage", "quality_max_interpolated_ratio", "quality_max_unmatched_seconds", "parser_backend", "latin_language",
     "language",
     "transcriber_backend",
     "aligner_backend",
     "writer_backend",
-    "filter_chain",
+    "filter_chain", "filter_steps",
     "parser_lyrics_encoding",
     "writer_spacing",
     "splitter_backend",
