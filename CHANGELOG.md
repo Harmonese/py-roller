@@ -6,7 +6,7 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ## [Unreleased]
 
-## [0.10.0] - Unreleased
+## [0.10.0]
 
 ### Changed
 
@@ -32,7 +32,6 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 - English and LRC only; results require review. Repeated, processed or overlapping singing may still be omitted or mistimed.
 - Previews follow a complete CTC pass, not real-time microphone processing. Demucs is opt-in and may remove processed vocals.
 - large-v3 has mixed per-song results; it is the chosen baseline, not a claim of universal superiority over v2. See the archived validation reports.
-- This entry is release preparation; it does not indicate a published package or tag.
 
 ## [0.9.0] - 2026-10-08
 
