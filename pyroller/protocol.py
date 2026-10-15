@@ -1,288 +1,138 @@
-from __future__ import annotations
-
-import importlib.metadata
-import re
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+"""Protocol v2: validated requests and compact, revision-replacing events."""
+from dataclasses import dataclass
+import json
 from pathlib import Path
-from typing import Any
+import uuid
 
-from pyroller.batch import BatchRunSummary, BatchTaskResult, artifact_paths_for_request
-from pyroller.domain import PipelineRequest, RunPipelineResult
-from pyroller.utils.json import read_json
+from . import __version__
+from .config import EngineConfig
 
-PROTOCOL_VERSION = 1
-ENGINE_NAME = "py-roller"
-STAGE_ORDER = ["s", "f", "t", "p", "a", "w"]
-LANGUAGES = ["zh", "en", "mul"]
-
-_PATH_FIELDS = {
-    "audio_path",
-    "lyrics_path",
-    "timed_units_path",
-    "parsed_lyrics_path",
-    "alignment_result_path",
-    "intermediate_dir",
-    "output_vocal_audio_path",
-    "output_filtered_audio_path",
-    "output_timed_units_path",
-    "output_parsed_lyrics_path",
-    "output_alignment_result_path",
-    "output_roller_path",
-}
-
-_REQUEST_ALIASES = {
-    "audio": "audio_path",
-    "lyrics": "lyrics_path",
-    "timed_units": "timed_units_path",
-    "parsed_lyrics": "parsed_lyrics_path",
-    "alignment_result": "alignment_result_path",
-    "output_vocal_audio": "output_vocal_audio_path",
-    "output_filtered_audio": "output_filtered_audio_path",
-    "output_timed_units": "output_timed_units_path",
-    "output_parsed_lyrics": "output_parsed_lyrics_path",
-    "output_alignment_result": "output_alignment_result_path",
-    "output_roller": "output_roller_path",
-    "intermediate": "intermediate_dir",
-}
-
-@dataclass(slots=True)
-class ProtocolBatchOptions:
-    continue_on_error: bool = False
-    skip_existing: bool = False
-    jobs: int = 1
-    manifest: Path | None = None
-    pair_by: str = "stem"
-    audio_glob: str = "*.mp3"
-    lyrics_glob: str = "*.txt"
-    timed_units_glob: str = "*.json"
-    parsed_lyrics_glob: str = "*.json"
-    alignment_result_glob: str = "*.json"
+PROTOCOL_VERSION = 2
+OPTION_NAMES = frozenset(EngineConfig.__dataclass_fields__)
+PATH_OPTIONS = {'cache_dir', 'whisper_model', 'ctc_model'}
+LINE_FIELDS = ('occurrence_id', 'line_id', 'text', 'start', 'end', 'status',
+               'finalized', 'content_status', 'timing_status', 'timing_method')
+TERMINAL_EVENTS = {'completed', 'failed', 'cancelled'}
 
 
-@dataclass(slots=True)
-class ProtocolBatchRequest:
-    request: PipelineRequest
-    options: ProtocolBatchOptions = field(default_factory=ProtocolBatchOptions)
+def envelope(request_id):
+    return dict(protocol_version=PROTOCOL_VERSION, engine='py-roller',
+                engine_version=__version__, request_id=request_id)
 
 
-@dataclass(slots=True)
-class ProtocolErrorDetail:
-    type: str
-    message: str
-    code: str = "engine_error"
-    detail: dict[str, Any] = field(default_factory=dict)
+def public_lines(rows):
+    return [{key: row[key] for key in LINE_FIELDS if key in row} for row in rows]
 
-    @classmethod
-    def from_exception(cls, exc: BaseException, *, code: str = "engine_error", detail: dict[str, Any] | None = None) -> "ProtocolErrorDetail":
-        return cls(
-            type=exc.__class__.__name__,
-            message=str(exc),
-            code=getattr(exc, "code", code),
-            detail=detail or {},
-        )
 
-    def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "type": self.type,
-            "code": self.code,
-            "message": self.message,
-        }
-        if self.detail:
-            payload["detail"] = self.detail
+def alignment_document(result, request_id, duration):
+    return dict(envelope(request_id), status='complete', duration=duration,
+                lines=public_lines(result['occurrences']))
+
+
+def error_code(exc):
+    if isinstance(exc, FileExistsError): return 'output_exists'
+    if isinstance(exc, FileNotFoundError): return 'file_not_found'
+    if isinstance(exc, (ValueError, TypeError)): return 'invalid_input'
+    if isinstance(exc, ImportError): return 'dependency_missing'
+    return 'execution_failed'
+
+
+def _object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result: raise ValueError(f'Duplicate JSON field: {key}')
+        result[key] = value
+    return result
+
+
+@dataclass(frozen=True)
+class Request:
+    request_id: str
+    audio: Path
+    lyrics: Path
+    output: Path
+    config: EngineConfig
+
+
+def load_request(path):
+    path = Path(path).expanduser().resolve()
+    data = json.loads(path.read_text(encoding='utf-8-sig'), object_pairs_hook=_object,
+                      parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f'Invalid JSON number: {value}')))
+    if not isinstance(data, dict): raise ValueError('Request must be a JSON object')
+    required = {'protocol_version', 'request_id', 'audio', 'lyrics', 'output'}
+    if required - data.keys(): raise ValueError(f'Missing request fields: {sorted(required-data.keys())}')
+    if data.keys() - required - {'options'}: raise ValueError('Unknown request fields')
+    if type(data['protocol_version']) is not int or data['protocol_version'] != 2:
+        raise ValueError('Only protocol_version 2 is supported')
+    identifier = data['request_id']
+    if not isinstance(identifier, str) or not identifier.strip() or len(identifier) > 128:
+        raise ValueError('request_id must be a nonempty string of at most 128 characters')
+    if any(ord(char) < 32 for char in identifier): raise ValueError('Invalid request_id characters')
+
+    def resolve(value):
+        if not isinstance(value, str) or not value.strip(): raise ValueError('Paths must be nonempty strings')
+        candidate = Path(value).expanduser()
+        return (candidate if candidate.is_absolute() else path.parent/candidate).resolve()
+
+    options = data.get('options', {})
+    if not isinstance(options, dict) or options.keys() - OPTION_NAMES:
+        raise ValueError('Unknown or invalid request options')
+    options = dict(options)
+    for key in PATH_OPTIONS & options.keys():
+        options[key] = resolve(options[key])
+    return Request(identifier, resolve(data['audio']), resolve(data['lyrics']),
+                   resolve(data['output']), EngineConfig(**options))
+
+
+class EventStream:
+    """One sequence and one terminal outcome per invocation; no internal paths leaked into lines."""
+    def __init__(self, request_id=None, sink=None):
+        self.request_id = request_id or str(uuid.uuid4())
+        self.sink = sink
+        self.sequence = 0
+        self.terminal = False
+        self.file = None
+        self.pending = []
+
+    def attach(self, path):
+        self.file = Path(path).open('x', encoding='utf-8')
+        try:
+            for line in self.pending: self.file.write(line)
+            self.file.flush()
+        except OSError:
+            try: self.file.close()
+            except OSError: pass
+            self.file = None
+            raise
+        self.pending.clear()
+
+    def emit(self, event):
+        if self.terminal: raise RuntimeError('Cannot emit after a terminal event')
+        event = dict(event)
+        if event['type'] == 'snapshot':
+            event.pop('schema_version', None)
+            event['lines'] = public_lines(event.pop('occurrences'))
+        self.sequence += 1
+        payload = dict(event, **envelope(self.request_id), sequence=self.sequence)
+        line = json.dumps(payload, ensure_ascii=False, allow_nan=False)+'\n'
+        if self.file:
+            try:
+                self.file.write(line)
+                self.file.flush()
+            except OSError:
+                # A full disk must not prevent reporting failure on stdout.
+                try: self.file.close()
+                except OSError: pass
+                self.file = None
+                self.sequence -= 1
+                raise
+        else:
+            self.pending.append(line)
+        self.terminal = event['type'] in TERMINAL_EVENTS
+        if self.sink: self.sink(payload)
         return payload
 
-
-def protocol_envelope(report_type: str, *, status: str = "ok", artifact_paths: dict[str, str] | None = None, error: ProtocolErrorDetail | dict[str, Any] | None = None, **payload: Any) -> dict[str, Any]:
-    report: dict[str, Any] = {
-        "schema_version": PROTOCOL_VERSION,
-        "engine": ENGINE_NAME,
-        "engine_version": engine_version(),
-        "protocol_version": PROTOCOL_VERSION,
-        "type": report_type,
-        "status": status,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "artifact_paths": artifact_paths or {},
-    }
-    report.update(payload)
-    if error is not None:
-        report["error"] = error.to_dict() if isinstance(error, ProtocolErrorDetail) else error
-    return report
-
-
-def engine_version() -> str:
-    source_version = _source_tree_version()
-    if source_version:
-        return source_version
-    try:
-        return importlib.metadata.version("py-roller")
-    except importlib.metadata.PackageNotFoundError:
-        return "0.0.0"
-
-
-def _source_tree_version() -> str | None:
-    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
-    if not pyproject.exists():
-        return None
-    match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.MULTILINE)
-    return match.group(1) if match else None
-
-
-def capabilities() -> dict[str, Any]:
-    from pyroller.config_contracts import backend_schemas, cli_option_metadata
-    payload = protocol_envelope(
-        "capabilities",
-        stage_order=STAGE_ORDER,
-        languages=LANGUAGES,
-        profiles=["auto", "cpu", "cu124"],
-        commands={
-            "capabilities": {"output_formats": ["json"]},
-            "run": {"request": "json", "progress_formats": ["jsonl"], "output_formats": ["json"]},
-            "batch": {"request": "json", "progress_formats": ["jsonl"], "output_formats": ["json"]},
-            "doctor": {"output_formats": ["json"]},
-            "install": {"progress_formats": ["jsonl"], "output_formats": ["json"]},
-            "cache-model": {"progress_formats": ["jsonl"], "output_formats": ["json"]},
-        },
-        schemas={
-            "request": 1,
-            "event": 1,
-            "result": 1,
-        },
-        options=cli_option_metadata(),
-        backend_schemas=backend_schemas(),
-    )
-    payload.pop("artifact_paths", None)
-    return payload
-
-
-def _path_or_none(value: object) -> Path | None:
-    if value is None:
-        return None
-    if not isinstance(value, (str, Path)):
-        raise ValueError("Path values must be strings")
-    text = str(value).strip()
-    return Path(text) if text else None
-
-
-def _request_payload(data: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(data, dict):
-        raise ValueError("Protocol request must be an object")
-    if data.get("protocol_version") is not None and (type(data["protocol_version"]) is not int or data["protocol_version"] != PROTOCOL_VERSION):
-        raise ValueError(f"Unsupported py-roller protocol version: {data.get('protocol_version')}")
-    payload = data.get("request", data)
-    if not isinstance(payload, dict):
-        raise ValueError("Protocol request must be a JSON object.")
-    return dict(payload)
-
-
-def pipeline_request_from_dict(data: dict[str, Any]) -> PipelineRequest:
-    payload = _request_payload(data)
-    for source, target in _REQUEST_ALIASES.items():
-        if source in payload:
-            if target in payload and payload[source] != payload[target]:
-                raise ValueError(f"Conflicting request fields: {source} and {target}")
-            payload[target] = payload.pop(source)
-    for field_name in _PATH_FIELDS:
-        if field_name in payload:
-            payload[field_name] = _path_or_none(payload[field_name])
-    stages = payload.get("stages")
-    if isinstance(stages, str):
-        payload["stages"] = [item.strip() for item in stages.split(",") if item.strip()]
-    if not isinstance(payload.get("stages"), list) or any(not isinstance(stage, str) for stage in payload["stages"]):
-        raise ValueError("stages must be a list of strings")
-    backend_config = payload.get("backend_config")
-    if backend_config is None:
-        payload["backend_config"] = {}
-    elif not isinstance(backend_config, dict):
-        raise ValueError("backend_config must be a JSON object.")
-    return PipelineRequest(**payload)
-
-
-def pipeline_request_from_json(path: Path) -> PipelineRequest:
-    return pipeline_request_from_dict(read_json(path))
-
-
-def batch_request_from_json(path: Path) -> ProtocolBatchRequest:
-    data = read_json(path)
-    request = pipeline_request_from_dict(data)
-    raw_options = data.get("batch") or data.get("options") or {}
-    if not isinstance(raw_options, dict):
-        raise ValueError("batch/options must be a JSON object.")
-    options_data = dict(raw_options)
-    if "manifest" in options_data:
-        options_data["manifest"] = _path_or_none(options_data["manifest"])
-    options = ProtocolBatchOptions(**options_data)
-    if type(options.jobs) is not int or options.jobs < 1 or any(type(getattr(options, key)) is not bool for key in ("continue_on_error", "skip_existing")):
-        raise ValueError("Invalid batch jobs or boolean options")
-    return ProtocolBatchRequest(request=request, options=options)
-
-
-def run_result_report(result: RunPipelineResult, request: PipelineRequest) -> dict[str, Any]:
-    return protocol_envelope(
-        "run_result",
-        artifact_paths=artifact_paths_for_request(request),
-        executed_stages=result.executed_stages,
-        quality=result.alignment.report.get("quality") if result.alignment else None,
-        counts={
-            "timed_units": len(result.transcription.units) if result.transcription is not None else None,
-            "parsed_lyrics": len(result.parsed_lyrics.lines) if result.parsed_lyrics is not None else None,
-            "aligned_lines": len(result.alignment.lines) if result.alignment is not None else None,
-        },
-        write_result=result.write_result.to_dict() if result.write_result is not None else None,
-    )
-
-
-def batch_task_result_report(item: BatchTaskResult) -> dict[str, Any]:
-    artifact_paths = getattr(item, "artifact_paths", None)
-    if not artifact_paths:
-        artifact_paths = {path.stem: str(path) for path in item.outputs}
-    error = None
-    if item.status == "failed":
-        error = item.error or {
-            "type": "BatchTaskError",
-            "code": "batch_task_failed",
-            "message": item.message,
-        }
-    return {
-        "index": item.index,
-        "task_id": item.stem,
-        "status": item.status,
-        "message": item.message,
-        "artifact_paths": artifact_paths,
-        "outputs": [str(path) for path in item.outputs],
-        "log_file": str(item.log_file) if item.log_file is not None else None,
-        "cleaned": item.cleaned,
-        "quality": item.quality,
-        "error": error,
-    }
-
-
-def batch_result_report(summary: BatchRunSummary) -> dict[str, Any]:
-    return protocol_envelope(
-        "batch_result",
-        status="failed" if summary.failed else "ok",
-        total=summary.total,
-        completed=summary.completed,
-        failed=summary.failed,
-        skipped=summary.skipped,
-        aborted=summary.aborted,
-        results=[batch_task_result_report(item) for item in summary.results],
-    )
-
-
-def error_report(exc: BaseException) -> dict[str, Any]:
-    return protocol_envelope(
-        "error",
-        status="failed",
-        error=ProtocolErrorDetail.from_exception(exc),
-    )
-
-
-def as_jsonable(data: Any) -> Any:
-    if isinstance(data, Path):
-        return str(data)
-    if hasattr(data, "to_dict"):
-        return data.to_dict()
-    if hasattr(data, "__dataclass_fields__"):
-        return asdict(data)
-    raise TypeError(f"Object of type {data.__class__.__name__} is not JSON serializable")
+    def close(self):
+        if self.file:
+            self.file.close()
+            self.file = None

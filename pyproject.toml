@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=77", "wheel", "pybind11>=2.12"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-roller"
-version = "0.9.0"
-description = "Composable lyric-audio alignment pipeline with staged execution, batch processing, and LRC/ASS export."
+version = "0.10.0"
+description = "English plain-lyrics alignment with Whisper large-v3, CTC timing and protocol v2."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = "MIT"
@@ -17,9 +17,7 @@ keywords = [
   "alignment",
   "audio",
   "lrc",
-  "ass",
   "cli",
-  "batch",
   "transcription",
   "music",
 ]
@@ -39,34 +37,34 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
-  "pypinyin>=0.50.0",
-  "opencc-python-reimplemented>=0.1.7",
-  "pronouncing>=0.2.0",
-  "phonemizer>=3.3.0",
-  "gruut[ar,ru]>=2.4.0",
-  "PyYAML>=6.0",
-  "tqdm>=4.66.0",
+  "cmudict>=1.0,<2",
+  "numpy>=1.24",
+  "torch>=2.6",
+  "transformers>=4.57,<5",
+  "faster-whisper>=1.2,<2",
+  "huggingface-hub>=0.34,<1",
 ]
 
 [project.optional-dependencies]
+vocals = ["demucs>=4,<5", "torchaudio>=2.1"]
 test = [
   "pytest>=8",
   "pytest-cov>=5",
   "numpy>=1.24",
   "soundfile>=0.12",
+  "jsonschema>=4.23,<5",
 ]
+release = ["build>=1.2", "twine>=6", "pybind11>=2.12"]
 
 [project.scripts]
-py-roller = "pyroller.cli.main:main"
+py-roller = "pyroller.cli:main"
 
 [tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-include = ["pyroller*"]
+include-package-data = false
+packages = ["pyroller", "pyroller.backends", "pyroller.hybrid", "pyroller.hybrid.vendor_power"]
 
 [tool.setuptools.package-data]
-pyroller = ["resources/constraints/*.txt", "resources/requirements/*.txt", "resources/locales/*.json"]
+"pyroller.hybrid.vendor_power" = ["LICENSE.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

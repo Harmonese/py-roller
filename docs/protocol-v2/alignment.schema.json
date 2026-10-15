@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "py-roller protocol v2 alignment",
+  "type": "object",
+  "required": ["protocol_version", "engine", "engine_version", "request_id", "status", "duration", "lines"],
+  "properties": {
+    "protocol_version": {"const": 2},
+    "engine": {"const": "py-roller"},
+    "engine_version": {"type": "string"},
+    "request_id": {"type": "string"},
+    "status": {"const": "complete"},
+    "duration": {"type": "number", "exclusiveMinimum": 0},
+    "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}}
+  },
+  "$defs": {
+    "line": {
+      "type": "object",
+      "required": ["occurrence_id", "line_id", "text", "start", "end", "status", "finalized"],
+      "properties": {
+        "occurrence_id": {"type": "string"},
+        "line_id": {"type": "string"},
+        "text": {"type": "string", "minLength": 1},
+        "start": {"type": "number", "minimum": 0},
+        "end": {"type": "number", "minimum": 0},
+        "status": {"enum": ["tentative", "needs_review"]},
+        "finalized": {"type": "boolean"},
+        "content_status": {"type": "string"},
+        "timing_status": {"type": "string"},
+        "timing_method": {"type": "string"}
+      }
+    }
+  }
+}

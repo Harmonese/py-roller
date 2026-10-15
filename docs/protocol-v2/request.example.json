@@ -1,0 +1,13 @@
+{
+  "protocol_version": 2,
+  "request_id": "rollingpebble-job-001",
+  "audio": "song.flac",
+  "lyrics": "lyrics.txt",
+  "output": "output/job-001",
+  "options": {
+    "audio_mode": "mix",
+    "offline": true,
+    "previews": true,
+    "cpu_threads": 4
+  }
+}

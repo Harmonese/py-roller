@@ -11,10 +11,12 @@ build/
 .mypy_cache/
 .DS_Store
 py-roller-artifacts/
+src-reconstruct/artifacts/
 testdata/
 testdata_intermediate/
 testdata_out/
 models/
 *.pyc
 *.pyo
+*.so
 CLAUDE.md

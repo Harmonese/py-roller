@@ -1,4 +1,0 @@
-# Official py-roller CUDA 12.4 audio profile.
-# Torch 2.6+ is required by the validated local transcriber stack.
-torch==2.6.0
-torchaudio==2.6.0

@@ -6,6 +6,34 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ## [Unreleased]
 
+## [0.10.0] - Unreleased
+
+### Changed
+
+- Replace the 0.9 phoneme/TTS pipeline with English Whisper discovery, repeat-aware lyric instance matching and local CTC timing. Plain lyric order and repeat counts are not treated as the performance order.
+- Pin Whisper large-v3 (`edaa852ec7e145841d8ffdb056a99866b5f0a478`) as the production baseline. Preserve the evaluated weighted matching, evidence stitching and conservative CTC timing algorithms without new tuning.
+- Separate neural adapters, task orchestration, algorithm internals and external protocol contracts.
+- Replace the CLI with `align`, `run --request`, `doctor` and `models list|download`. Remove public experimental algorithm flags.
+
+### Added
+
+- Protocol v2 request validation, ordered JSONL events, revisable full snapshots, explicit completion/failure/cancellation and compact `alignment.json` results for Rolling Pebble.
+- Protocol JSON Schemas, subprocess integration examples, migration guide and release artifact checks.
+- Pinned model inventory/download commands and a read-only dependency/model doctor.
+- Structured preflight errors, isolated per-run artifacts and content-addressed neural evidence reuse.
+
+### Removed
+
+- The 0.9 batch/configuration/protocol stack, phoneme parsers, TTS-era components, ASS writers, obsolete resources and prototype engine source from the active tree.
+- Legacy compatibility requirements. Protocol v1 consumers must migrate; old CLI commands are not supported.
+
+### Limitations
+
+- English and LRC only; results require review. Repeated, processed or overlapping singing may still be omitted or mistimed.
+- Previews follow a complete CTC pass, not real-time microphone processing. Demucs is opt-in and may remove processed vocals.
+- large-v3 has mixed per-song results; it is the chosen baseline, not a claim of universal superiority over v2. See the archived validation reports.
+- This entry is release preparation; it does not indicate a published package or tag.
+
 ## [0.9.0] - 2026-10-08
 
 ### Release review fixes

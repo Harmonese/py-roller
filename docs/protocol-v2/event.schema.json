@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "py-roller protocol v2 event",
+  "type": "object",
+  "required": ["protocol_version", "engine", "engine_version", "request_id", "sequence", "type"],
+  "properties": {
+    "protocol_version": {"const": 2},
+    "engine": {"const": "py-roller"},
+    "engine_version": {"type": "string"},
+    "request_id": {"type": "string"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "type": {"enum": ["started", "progress", "snapshot", "completed", "failed", "cancelled"]},
+    "stage": {"type": "string"},
+    "audio_available_until": {"type": "number", "minimum": 0},
+    "duration": {"type": "number", "exclusiveMinimum": 0},
+    "revision": {"type": "integer", "minimum": 1},
+    "final": {"type": "boolean"},
+    "lines": {"type": "array", "items": {"$ref": "alignment.schema.json#/$defs/line"}},
+    "artifacts": {
+      "type": "object", "required": ["alignment", "lrc", "diagnostics", "run", "events"],
+      "additionalProperties": {"type": "string"}
+    },
+    "summary": {
+      "type": "object", "required": ["lines", "duration"],
+      "properties": {"lines": {"type": "integer", "minimum": 0}, "duration": {"type": "number", "exclusiveMinimum": 0}}
+    },
+    "metrics": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0}},
+    "code": {"type": "string"},
+    "message": {"type": "string"}
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "progress"}}}, "then": {"required": ["stage"]}},
+    {"if": {"properties": {"type": {"const": "snapshot"}}}, "then": {"required": ["revision", "final", "lines", "audio_available_until"]}},
+    {"if": {"properties": {"type": {"const": "completed"}}}, "then": {"required": ["revision", "artifacts", "summary", "metrics"]}},
+    {"if": {"properties": {"type": {"enum": ["failed", "cancelled"]}}}, "then": {"required": ["code", "message"]}}
+  ]
+}

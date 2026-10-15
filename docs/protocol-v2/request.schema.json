@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "py-roller protocol v2 request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "request_id", "audio", "lyrics", "output"],
+  "properties": {
+    "protocol_version": {"const": 2},
+    "request_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001f]+$"},
+    "audio": {"$ref": "#/$defs/path"},
+    "lyrics": {"$ref": "#/$defs/path"},
+    "output": {"$ref": "#/$defs/path"},
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cache_dir": {"$ref": "#/$defs/path"},
+        "whisper_model": {"$ref": "#/$defs/path"},
+        "ctc_model": {"$ref": "#/$defs/path"},
+        "audio_mode": {"enum": ["mix", "vocals"]},
+        "ctc_device": {"enum": ["auto", "cpu", "mps"]},
+        "cpu_threads": {"type": "integer", "minimum": 1},
+        "offline": {"type": "boolean"},
+        "previews": {"type": "boolean"}
+      }
+    }
+  },
+  "$defs": {"path": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+}
