@@ -13,7 +13,7 @@ py-roller align song.flac lyrics.txt -o output/song --audio-mode vocals
 | 选项 | 默认值 | 含义 |
 |---|---|---|
 | `--audio-mode` | `mix` | `mix` 原声，`vocals` 显式 Demucs |
-| `--offline` | 关闭 | 不下载模型；人声模式还要求已完成的分离缓存 |
+| `--offline` | 关闭 | 不下载模型；已有 Demucs 权重时可离线完成新的分离 |
 | `--cache-dir` | `~/.cache/py-roller/v1` | 模型与推理证据缓存 |
 | `--whisper-model` | 固定 large-v3 | 显式本地 faster-whisper 检查点目录 |
 | `--ctc-model` | 固定 wav2vec2 | 显式本地 Transformers CTC 目录 |
@@ -38,11 +38,19 @@ python -m pyroller run --request /absolute/path/request.json
 py-roller models list --json
 py-roller models download
 py-roller models download --kind whisper --cache-dir /path/to/cache
+py-roller models migrate --cache-dir /path/to/cache
+py-roller models download --kind demucs
+py-roller models remove --kind whisper
+py-roller models remove --kind whisper --apply
 ```
 
-`list` 不访问网络、不加载权重。`download` 准备缺失的固定版本，可指定 `whisper`、`ctc` 或默认 `all`。Whisper large-v3 是 CTranslate2 检查点，不是 OpenAI 的 `.pt` 权重。模型可用性只检查必要文件，不表示推理质量或文件完整哈希已验证。
+`list` 不访问网络、不加载权重。`download` 准备缺失的固定版本，可指定 `whisper`、`ctc`、`demucs` 或默认 `all`（包含三者）。Whisper large-v3 是 CTranslate2 检查点，不是 OpenAI 的 `.pt` 权重。模型可用性只检查必要文件，不表示推理质量或文件完整哈希已验证；Demucs 安装时校验官方文件名中的 SHA256 前缀。
 
-Demucs 权重由人声分离后端首次运行时取得，`models download` 只准备 Whisper 与 CTC。离线人声任务需要先做过相同配置的分离，或把已分离音频以 `mix` 输入。
+三种权重统一存放在 `<cache-dir>/models/<kind>/<revision>/`。运行时仅使用显式本地路径或该目录，不再隐式借用旧缓存，也不受 `HF_HOME` / `TORCH_HOME` 控制。Demucs 通过本地 `--repo` 加载，禁止依赖自行切换下载来源；分离结果仍存放在 `<cache-dir>/separation/`。
+
+`migrate` 无网络导入已知旧路径（large-v3 实验目录、旧 Hugging Face 快照、Torch Demucs 缓存）；同盘优先硬链接，跨盘复制，保留原文件。`list --json` 同时提供 `managed_path` 和可发现的 `legacy_path`。显式 `--whisper-model` / `--ctc-model` 优先且不被自动迁移。迁移后可正常复用原推理证据。迁移源保留以兼容其他程序，硬链接源文件不可原地修改。
+
+`remove` 默认仅预览，`--apply` 才删除所选固定版本的托管目录；不删除显式模型、旧共享缓存或推理证据，也不遍历未知模型。请在没有对齐任务运行时执行删除。由于硬链接或旧缓存仍在，删除托管目录未必立即释放相同大小的磁盘空间。下载、迁移和清理互斥；若强制退出遗留 `models/.management.lock`，确认管理进程已退出后再删除锁目录。
 
 ## doctor：只读环境检查
 
@@ -51,7 +59,7 @@ py-roller doctor --json
 py-roller doctor --audio-mode vocals
 ```
 
-检查 Python、FFmpeg、依赖可导入性、C++ 扩展及模型文件是否存在；不下载、不加载神经权重。`ready` 要求基本运行依赖及两个模型都可用。`network.https_available` 单独检查 Python SSL 是否可导入，失败时离线缓存仍可运行；它不检查远端连通性或证书链。人声模式额外检查 Demucs/torchaudio，但无法在未指定音频时确认其分离缓存或 Demucs 权重是否已准备好。`ready` 不保证设备内存、网络证书或每个输入都可处理。
+检查 Python、FFmpeg、依赖可导入性、C++ 扩展及模型文件是否存在；不下载、不加载神经权重。`ready` 要求基本运行依赖及 Whisper、CTC 模型可用，人声模式额外要求 Demucs/torchaudio 和 Demucs 权重。`network.https_available` 单独检查 Python SSL 是否可导入，失败时离线缓存仍可运行；它不检查远端连通性或证书链。`ready` 不保证设备内存、网络证书或每个输入都可处理。
 
 ## 退出和取消
 

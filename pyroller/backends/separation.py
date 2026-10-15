@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import subprocess
 import sys
 
-from .catalog import evidence_directory
+from .catalog import evidence_directory, resolve_model
 from ..hybrid.io import sha256, read_json, save_json, decode_audio
 
 
@@ -36,8 +36,6 @@ def separate(audio, config, progress):
         if sha256(target) != read_json(completed)['audio_sha256']:
             raise ValueError(f'Corrupt separation cache: {target}')
         return target
-    if config.offline:
-        raise ValueError('Offline vocals mode requires a separation cache; use mix or pre-separated audio')
     with cache_lock(folder):
         if target.exists() and completed.exists():
             if sha256(target) != read_json(completed)['audio_sha256']:
@@ -50,12 +48,13 @@ def separate(audio, config, progress):
 
 
 def _run_demucs(audio, folder, target, config):
+    repo = resolve_model('demucs', config)
     decoded = folder/'input.wav'
     subprocess.run(['ffmpeg','-v','error','-y','-i',str(audio),'-ar','44100','-ac','2',
         '-c:a','pcm_f32le',str(decoded)], check=True, capture_output=True)
     with (folder/'demucs.log').open('w') as log:
         subprocess.run([sys.executable, '-m', 'pyroller.backends.demucs_worker', str(config.cpu_threads),
-            '--two-stems', 'vocals', '-n', 'htdemucs', '--shifts', '1', '-d', 'cpu',
+            '--two-stems', 'vocals', '-n', 'htdemucs', '--repo', str(repo), '--shifts', '1', '-d', 'cpu',
             '--float32', '--clip-mode', 'none', '-o', str(folder), str(decoded)],
             stdout=log, stderr=subprocess.STDOUT, check=True)
     if not target.is_file(): raise RuntimeError(f'Demucs produced no vocals: {folder}/demucs.log')

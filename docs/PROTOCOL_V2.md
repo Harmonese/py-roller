@@ -1,6 +1,6 @@
 # Protocol v2：Rolling Pebble 接入
 
-适用 py-roller 0.10.0。版本号是 `protocol_version: 2`，与 Python 包版本、缓存目录和内部诊断 schema 无关。旧 protocol v1 不兼容；此文档不表示相邻 Rolling Pebble 代码已迁移。
+适用 py-roller 0.10.x（当前 0.10.1）。版本号是 `protocol_version: 2`，与 Python 包版本、缓存目录和内部诊断 schema 无关。旧 protocol v1 不兼容；此文档不表示相邻 Rolling Pebble 代码已迁移。
 
 ## 启动与请求
 
@@ -30,7 +30,7 @@
 stdout 每行一个 JSON 对象，UTF-8，无前缀；stderr 单独收集日志。不要把两个流合并再解析。每条事件包含：
 
 ```json
-{"protocol_version":2,"engine":"py-roller","engine_version":"0.10.0","request_id":"job-001","sequence":1,"type":"started"}
+{"protocol_version":2,"engine":"py-roller","engine_version":"0.10.1","request_id":"job-001","sequence":1,"type":"started"}
 ```
 
 `sequence` 从 1 开始严格递增。客户端检查版本、任务 ID，忽略已经处理过的 sequence。允许未来增加输出字段；不要依赖 JSON key 顺序或 stderr 文本。

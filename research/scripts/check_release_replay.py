@@ -19,7 +19,10 @@ def main():
     results=[]
     for name in ('whisper-v3-validation','whisper-v3-expanded'):
         root=ROOT/'py-roller-artifacts'/name
-        for path in sorted(root.glob('*/*/v3/result.json')):
+        paths = sorted(root.glob('*/*/v3/result.json'))
+        if not paths:
+            raise FileNotFoundError(f'Missing release replay dataset: {root}')
+        for path in paths:
             run=read_json(path.parent/'run.json')
             old=read_json(path)
             ctc_cache=run.get('ctc_cache')
@@ -40,6 +43,8 @@ def main():
             assert all(0<=r['start']<=r['end']<=duration for r in public['lines'])
             results.append(dict(sample=str(path.parent.relative_to(root)),dataset=name,identical=True,lines=len(public['lines'])))
             print('IDENTICAL',results[-1],flush=True)
+    if len(results) != 10:
+        raise ValueError(f'Expected 10 release replay arms, found {len(results)}')
     save_json(ROOT/'py-roller-artifacts/release-0.10.0/replay.json',results)
 
 

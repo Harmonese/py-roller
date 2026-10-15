@@ -49,8 +49,9 @@ def parser():
     doctor.add_argument('--audio-mode', choices=['mix', 'vocals'], default='mix')
     _model_options(doctor)
     models = commands.add_parser('models', help='Inspect or download pinned production models')
-    models.add_argument('action', choices=['list', 'download'])
-    models.add_argument('--kind', choices=['all', 'whisper', 'ctc'], default='all')
+    models.add_argument('action', choices=['list', 'download', 'migrate', 'remove'])
+    models.add_argument('--kind', choices=['all', 'whisper', 'ctc', 'demucs'], default='all')
+    models.add_argument('--apply', action='store_true', help='Apply model removal (otherwise preview only)')
     models.add_argument('--json', action='store_true')
     _model_options(models)
     return root
@@ -86,12 +87,18 @@ def main(argv=None):
                 if args.command == 'doctor':
                     report = inspect(config)
                 else:
-                    if args.action == 'download':
-                        from .backends.catalog import resolve_model
-                        for kind in ('whisper', 'ctc') if args.kind == 'all' else (args.kind,):
-                            resolve_model(kind, config)
+                    from .backends.catalog import MODELS, resolve_model, migrate_model, remove_model
+                    if args.apply and args.action != 'remove':
+                        raise ValueError('--apply is only valid for models remove')
+                    operations = []
+                    for kind in MODELS if args.kind == 'all' else (args.kind,):
+                        if args.action == 'download': resolve_model(kind, config)
+                        elif args.action == 'migrate': migrate_model(kind, config)
+                        elif args.action == 'remove':
+                            target = remove_model(kind, config, args.apply)
+                            operations.append(dict(kind=kind, path=str(target), applied=args.apply))
                     report = dict(protocol_version=2, engine='py-roller', engine_version=__version__,
-                                  type='models', models=model_inventory(config))
+                                  type='models', models=model_inventory(config), operations=operations)
                     if args.kind != 'all': report['models'] = [m for m in report['models'] if m['kind'] == args.kind]
             if args.json: _json(report, stdout)
             elif args.command == 'doctor':
@@ -99,6 +106,10 @@ def main(argv=None):
                 for model in report['models']: print(f"{'OK' if model['available'] else 'MISSING'} {model['kind']}: {model['repo']}")
             else:
                 for model in report['models']: print(f"{model['kind']}: {model['repo']} [{model['revision']}]\n  {model['path'] or 'not downloaded'}")
+                for operation in report.get('operations', []):
+                    print(f"{'Removed' if operation['applied'] else 'Would remove'}: {operation['path']}")
+                for model in report['models']:
+                    if model.get('legacy_path'): print(f"  Migration source ({model['kind']}): {model['legacy_path']}")
             return 0 if args.command == 'models' or report['ready'] else 1
         if args.command == 'run':
             request = load_request(args.request)

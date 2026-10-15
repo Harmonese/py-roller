@@ -133,7 +133,7 @@ def test_incomplete_auto_model_cache_is_not_accepted(tmp_path,monkeypatch):
     monkeypatch.setattr(Path,'home',classmethod(lambda cls: tmp_path/'home'))
     config=EngineConfig(cache_dir=tmp_path)
     repo,revision,_=MODELS['whisper']
-    folder=tmp_path/'models'/('models--'+repo.replace('/','--'))/'snapshots'/revision
+    folder=tmp_path/'models/whisper'/revision
     folder.mkdir(parents=True)
     (folder/'config.json').write_text('{}')
     assert local_model('whisper',config) is None

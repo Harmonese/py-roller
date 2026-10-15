@@ -2,6 +2,7 @@ include README.md CHANGELOG.md LICENSE pyproject.toml setup.py
 recursive-include pyroller *.py *.cpp *.txt
 recursive-include tests *.py
 include docs/ARCHITECTURE.md docs/CLI.md docs/PROTOCOL_V2.md docs/MIGRATION_0.10.md docs/RELEASE.md docs/RELEASE_VALIDATION_0.10.md
+include docs/MAINTENANCE_AUDIT.md
 recursive-include docs/protocol-v2 *.json
 include scripts/check_release.py
 prune docs/research

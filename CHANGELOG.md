@@ -6,6 +6,19 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-15
+
+### Changed
+
+- Unify Whisper, CTC and pinned Demucs checkpoints under the selected cache root; add explicit migration and preview-first removal; support offline Demucs separation with local weights.
+- Share runtime configuration validation with research tools and fail release replay checks when datasets are missing.
+
+### Migration
+
+- Run `py-roller models migrate` after upgrading. Runtime resolution no longer silently reads legacy model directories. Existing inference evidence remains reusable; migration preserves source files and uses hard links when possible.
+- `models download` now includes Demucs with `--kind all`; model removal previews by default and requires `--apply` to delete managed weights. Explicit model paths and shared legacy caches are preserved.
+- Protocol v2 and the evaluated lyric matching/timing algorithms are unchanged.
+
 ## [0.10.0]
 
 ### Changed

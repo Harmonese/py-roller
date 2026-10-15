@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from pathlib import Path
+from ..config import EngineConfig as RuntimeConfig
 
 
 @dataclass(frozen=True)
@@ -53,28 +53,15 @@ class AlignmentSettings:
 
 
 @dataclass(frozen=True)
-class EngineConfig:
+class EngineConfig(RuntimeConfig):
     scoring_mode: str = 'weighted'
     stitching_mode: str = 'evidence'
-    cache_dir: Path = Path.home()/'.cache/py-roller/v1'
-    whisper_model: Path | None = None
-    ctc_model: Path | None = None
-    audio_mode: str = 'mix'
-    ctc_device: str = 'auto'
-    offline: bool = False
-    cpu_threads: int = 4
-    previews: bool = True
     matching_mode: str = 'robust'
     timing_mode: str = 'legacy'
     whisper_context: str = 'none'
 
     def __post_init__(self):
-        if self.audio_mode not in ('mix','vocals'):
-            raise ValueError('audio_mode must be mix or vocals')
-        if self.ctc_device not in ('auto','cpu','mps'):
-            raise ValueError('ctc_device must be auto, cpu or mps')
-        if self.cpu_threads < 1:
-            raise ValueError('cpu_threads must be positive')
+        super().__post_init__()
         if self.whisper_context not in ('none','lyrics'):
             raise ValueError('Invalid Whisper context mode')
         AlignmentSettings(matching_mode=self.matching_mode,timing_mode=self.timing_mode,stitching_mode=self.stitching_mode,

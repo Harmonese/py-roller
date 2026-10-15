@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-roller"
-version = "0.10.0"
+version = "0.10.1"
 description = "English plain-lyrics alignment with Whisper large-v3, CTC timing and protocol v2."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -73,7 +73,4 @@ markers = [
   "slow: slow tests that are not suitable for the default feedback loop",
   "network: tests that require network access",
   "runtime: tests that require the full audio/model runtime stack",
-]
-filterwarnings = [
-  "ignore:datetime\\.datetime\\.utcnow\\(\\) is deprecated.*:DeprecationWarning:dateparser\\.timezone_parser",
 ]
