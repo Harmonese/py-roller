@@ -55,7 +55,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          test "$RELEASE_TAG" = v0.10.1
+          test "$RELEASE_TAG" = v0.10.2
           mkdir publish
           cp dist/*.tar.gz publish/
       - uses: pypa/gh-action-pypi-publish@release/v1

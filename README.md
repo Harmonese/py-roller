@@ -2,7 +2,7 @@
 
 把英文 plain lyrics 对齐到歌曲，输出 LRC。歌词文本应包含可能出现的完整行，但不必按实际演唱顺序排列，也不必写全重复次数。
 
-**0.10.1**：Whisper large-v3 发现歌词实例，CTC 细化时间；提供面向 Rolling Pebble 的 **Protocol v2**。0.10 系列重写不兼容 0.9 CLI、配置或协议。
+**0.10.2**：Whisper large-v3 发现歌词实例，CTC 细化时间；提供面向 Rolling Pebble 的 **Protocol v2**。0.10 系列重写不兼容 0.9 CLI、配置或协议。
 
 从 0.10.0 升级后先运行 `py-roller models migrate`，将已有模型导入统一目录，避免重新下载。当前默认采用完整有序歌词对齐；需要原来的自由匹配行为时显式指定 `--alignment-mode unordered`。
 

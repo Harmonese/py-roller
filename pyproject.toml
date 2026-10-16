@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-roller"
-version = "0.10.1"
+version = "0.10.2"
 description = "Ordered and unordered English lyric alignment with Whisper large-v3, CTC timing and protocol v2."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"

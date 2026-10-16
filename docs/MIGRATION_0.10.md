@@ -1,6 +1,6 @@
 # 迁移到 0.10.0
 
-## 当前 0.10.1 的模式选择
+## 当前 0.10.2 的模式选择
 
 当前源码默认 `ordered`，输入必须完整、有序并包含所有重复行。沿用旧的无序歌词集合时，请显式设置 `--alignment-mode unordered` 或请求 `options.alignment_mode: "unordered"`。环境变量 `PYROLLER_ALIGNMENT_MODE` 可设置进程默认值，显式配置优先；旧的开发名称 `inventory` 不再接受。
 

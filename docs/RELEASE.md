@@ -1,6 +1,6 @@
-# 0.10.1 发布准备
+# 0.10.2 发布准备
 
-本文件是准备清单，不代表 PyPI 已发布。版本与 Changelog 已更新至 0.10.1，发布标签为 `v0.10.1`。推送标签不会发布到 PyPI；GitHub Release published 才会触发上传。
+本文件是准备清单，不代表 PyPI 已发布。版本与 Changelog 已更新至 0.10.2，发布标签为 `v0.10.2`。推送标签不会发布到 PyPI；GitHub Release published 才会触发上传。
 
 ## 本地检查
 
@@ -10,9 +10,9 @@ python -m pytest
 python -m pyroller --version
 python -m pyroller align --help
 python -m pyroller doctor --json
-python -m build --outdir dist/0.10.1
-python scripts/check_release.py dist/0.10.1
-python -m twine check dist/0.10.1/*
+python -m build --outdir dist/0.10.2
+python scripts/check_release.py dist/0.10.2
+python -m twine check dist/0.10.2/*
 ```
 
 `doctor` 的模型就绪状态取决于本机缓存；CI 不下载神经模型。源码包包含公开文档、协议 Schema、测试与 C++ 源码，不包含歌曲、模型、研究缓存或旧引擎。
