@@ -46,4 +46,5 @@ def inspect(config=None):
             if m['kind'] != 'demucs' or config.audio_mode == 'vocals'),
         runtime_ok=runtime_ok, checks=checks, models=models, network=network,
         capabilities=dict(languages=['en'], formats=['lrc'], audio_modes=['mix', 'vocals'],
+                          alignment_modes=['unordered', 'ordered'],
                           revisable_previews=True, protocol_versions=[2]))

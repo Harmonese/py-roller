@@ -99,7 +99,7 @@ def main():
                             stream.close()
                         run.update(whisper_cache=str(stream.cache), whisper_inference_seconds=stream.inference_seconds,
                             whisper_load_seconds=stream.load_seconds, cache_hits=stream.cache_hits)
-                    result = align_evidence(inputs[0], windows, *inputs[2:], settings=AlignmentSettings())
+                    result = align_evidence(inputs[0], windows, *inputs[2:], settings=AlignmentSettings(alignment_mode='unordered'))
                     write_replay(result, run, folder)
                     save_json(folder/'raw-windows.json', windows)
                     atomic_write(folder/'raw-transcript.txt', '\n\n'.join(

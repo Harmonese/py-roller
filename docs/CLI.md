@@ -13,6 +13,7 @@ py-roller align song.flac lyrics.txt -o output/song --audio-mode vocals
 | 选项 | 默认值 | 含义 |
 |---|---|---|
 | `--audio-mode` | `mix` | `mix` 原声，`vocals` 显式 Demucs |
+| `--alignment-mode` | `PYROLLER_ALIGNMENT_MODE` 或 `ordered` | `unordered` 自由重复匹配；`ordered` 完整有序歌词对齐 |
 | `--offline` | 关闭 | 不下载模型；已有 Demucs 权重时可离线完成新的分离 |
 | `--cache-dir` | `~/.cache/py-roller/v1` | 模型与推理证据缓存 |
 | `--whisper-model` | 固定 large-v3 | 显式本地 faster-whisper 检查点目录 |
@@ -22,7 +23,11 @@ py-roller align song.flac lyrics.txt -o output/song --audio-mode vocals
 | `--no-previews` | 关闭 | 只计算最终匹配结果；仍有进度事件 |
 | `--json-events` | 关闭 | stdout 输出 Protocol v2 JSONL |
 
-普通模式进度写 stderr，成功后 stdout 输出最终 LRC 绝对路径。输出目录必须是新目录，不能用输出文件名代替目录。不要传入已有 LRC；重复歌词可仅写一次，顺序无需和音频一致。
+普通模式进度写 stderr，成功后 stdout 输出最终 LRC 绝对路径。输出目录必须是新目录，不能用输出文件名代替目录。不要传入已有 LRC。`unordered` 允许重复歌词仅写一次、顺序任意；`ordered` 必须写出所有实际重复，保持实际演唱顺序。段落标题和空行不参与对齐。
+
+模式优先级为显式 CLI 参数 / Protocol 请求 `options.alignment_mode` / Python `EngineConfig(alignment_mode=...)`，其次环境变量 `PYROLLER_ALIGNMENT_MODE`，最后 `ordered`。环境变量在构造任务配置时读取，非法值报错，不静默回退。`run --request` 的模式通过请求选项指定，不混用 CLI 覆盖。
+
+两种模式共享声学缓存。ordered 使用全局有序词编辑路径寻找对应，保留粗时间回退，并对连续缺失行进行局部联合 CTC 补定位；不将单行相似度门槛作为进入整曲匹配的条件。词对齐最多 400 万格，超限报错；局部补定位最多 32 秒，超限或证据不足保留未定位状态。该模式仍需人工复核，不能把全局最优编辑路径当作正确性的保证。
 
 ## run：应用工作进程
 

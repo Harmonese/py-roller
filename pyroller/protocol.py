@@ -11,7 +11,7 @@ PROTOCOL_VERSION = 2
 OPTION_NAMES = frozenset(EngineConfig.__dataclass_fields__)
 PATH_OPTIONS = {'cache_dir', 'whisper_model', 'ctc_model'}
 LINE_FIELDS = ('occurrence_id', 'line_id', 'text', 'start', 'end', 'status',
-               'finalized', 'content_status', 'timing_status', 'timing_method')
+               'finalized', 'content_status', 'timing_status', 'timing_method', 'input_line_index')
 TERMINAL_EVENTS = {'completed', 'failed', 'cancelled'}
 
 
@@ -25,8 +25,11 @@ def public_lines(rows):
 
 
 def alignment_document(result, request_id, duration):
-    return dict(envelope(request_id), status='complete', duration=duration,
+    document = dict(envelope(request_id), status='complete', duration=duration,
                 lines=public_lines(result['occurrences']))
+    if result.get('reference_order_used'):
+        document.update(alignment_mode='ordered', unaligned_lines=result['unaligned_lines'])
+    return document
 
 
 def error_code(exc):

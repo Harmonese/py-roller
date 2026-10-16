@@ -1,10 +1,12 @@
 """Stable file-engine options. Algorithm experiments are not runtime options."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 
 @dataclass(frozen=True)
 class EngineConfig:
+    alignment_mode: str = field(default_factory=lambda: os.environ.get('PYROLLER_ALIGNMENT_MODE', 'ordered'))
     cache_dir: Path = Path.home() / '.cache/py-roller/v1'
     whisper_model: Path | None = None
     ctc_model: Path | None = None
@@ -15,6 +17,8 @@ class EngineConfig:
     previews: bool = True
 
     def __post_init__(self):
+        if self.alignment_mode not in ('unordered', 'ordered'):
+            raise ValueError('alignment_mode must be unordered or ordered')
         if self.audio_mode not in ('mix', 'vocals'):
             raise ValueError('audio_mode must be mix or vocals')
         if self.ctc_device not in ('auto', 'cpu', 'mps'):

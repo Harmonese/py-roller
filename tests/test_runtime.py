@@ -87,7 +87,7 @@ def test_no_previews_same_final(fake_runtime,tmp_path):
 
 
 def test_public_result_separate_from_internal_diagnostics(fake_runtime,tmp_path):
-    result=runtime.align(*fake_runtime,tmp_path/'out',request_id='test-job')
+    result=runtime.align(*fake_runtime,tmp_path/'out',EngineConfig(alignment_mode='unordered'),request_id='test-job')
     diagnostic=read_json(tmp_path/'out/result.json')
     assert diagnostic['settings']['matching_mode']=='robust'
     assert diagnostic['settings']['timing_mode']=='legacy'

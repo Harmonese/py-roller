@@ -4,6 +4,7 @@ from ..config import EngineConfig as RuntimeConfig
 
 @dataclass(frozen=True)
 class AlignmentSettings:
+    alignment_mode: str = 'ordered'
     scoring_mode: str = 'weighted'
     stitching_mode: str = 'evidence'
     matching_mode: str = 'robust'
@@ -36,6 +37,8 @@ class AlignmentSettings:
     posterior_max_width: float = 1.0
 
     def __post_init__(self):
+        if self.alignment_mode not in ('unordered', 'ordered'):
+            raise ValueError('Invalid alignment mode')
         if self.scoring_mode not in ('original', 'consistent', 'weighted', 'power'):
             raise ValueError('Invalid scoring mode')
         if self.stitching_mode not in ('legacy','evidence'):

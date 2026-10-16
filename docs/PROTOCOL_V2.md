@@ -2,6 +2,12 @@
 
 适用 py-roller 0.10.x（当前 0.10.1）。版本号是 `protocol_version: 2`，与 Python 包版本、缓存目录和内部诊断 schema 无关。旧 protocol v1 不兼容；此文档不表示相邻 Rolling Pebble 代码已迁移。
 
+新增可选 `options.alignment_mode: "unordered" | "ordered"`，显式值覆盖 `PYROLLER_ALIGNMENT_MODE`，未设置时默认 ordered。ordered 要求输入完整并保留所有重复次数。
+
+ordered 的结果与每次 snapshot 增加 `alignment_mode: "ordered"` 及 `unaligned_lines`。`lines` 继续只包含具有数值时间的已定位行；`unaligned_lines` 包含 `occurrence_id`、`line_id`、`input_line_index`、`text`、`reason`，没有虚构时间。两者通过从零开始的原文件物理行号 `input_line_index` 合并还原输入；空行和 `[Chorus]` 等标题不产生条目。重复文本共享 `line_id`，但 ordered 的 `occurrence_id` 由输入行号生成，在同任务预览间保持稳定。每次快照需同时替换这两个数组。LRC 仅写入 `lines`。
+
+未定位原因包括 `pending_audio`（预览尚无后续证据）、`region_budget_or_empty`、`insufficient_evidence` 和 `overlapping_assignment`。完成表示算法已结束，不表示所有输入行均已定位。unordered 模式保持既有结果形状。
+
 ## 启动与请求
 
 ```bash

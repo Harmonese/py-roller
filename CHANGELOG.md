@@ -6,7 +6,12 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ## [Unreleased]
 
-## [0.10.1] - 2026-10-15
+## [0.10.1] - 2026-10-17
+
+### Added
+
+- Default ordered full-lyrics alignment via CLI, `PYROLLER_ALIGNMENT_MODE`, Python configuration and Protocol v2 request options. Select `--alignment-mode unordered` for the original order-independent matching workflow.
+- Global monotonic word matching, bounded joint CTC recovery for missing lines, stable input-line identities and explicit `unaligned_lines` in ordered results and snapshots. Neural evidence caches are shared across modes.
 
 ### Changed
 
@@ -17,7 +22,7 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 - Run `py-roller models migrate` after upgrading. Runtime resolution no longer silently reads legacy model directories. Existing inference evidence remains reusable; migration preserves source files and uses hard links when possible.
 - `models download` now includes Demucs with `--kind all`; model removal previews by default and requires `--apply` to delete managed weights. Explicit model paths and shared legacy caches are preserved.
-- Protocol v2 and the evaluated lyric matching/timing algorithms are unchanged.
+- Protocol v2 is extended with ordered input-line identities and unaligned lines. Existing callers with incomplete or reordered lyrics must explicitly select `unordered`; the unordered scoring and timing algorithms are unchanged.
 
 ## [0.10.0]
 

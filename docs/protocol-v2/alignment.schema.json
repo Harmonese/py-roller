@@ -10,15 +10,27 @@
     "request_id": {"type": "string"},
     "status": {"const": "complete"},
     "duration": {"type": "number", "exclusiveMinimum": 0},
+    "alignment_mode": {"enum": ["unordered", "ordered"]},
+    "unaligned_lines": {"type": "array", "items": {"$ref": "#/$defs/unaligned"}},
     "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}}
   },
   "$defs": {
+    "unaligned": {
+      "type": "object",
+      "required": ["occurrence_id", "line_id", "input_line_index", "text", "reason"],
+      "properties": {
+        "occurrence_id": {"type": "string"}, "line_id": {"type": "string"},
+        "input_line_index": {"type": "integer", "minimum": 0},
+        "text": {"type": "string"}, "reason": {"type": "string"}
+      }
+    },
     "line": {
       "type": "object",
       "required": ["occurrence_id", "line_id", "text", "start", "end", "status", "finalized"],
       "properties": {
         "occurrence_id": {"type": "string"},
         "line_id": {"type": "string"},
+        "input_line_index": {"type": "integer", "minimum": 0},
         "text": {"type": "string", "minLength": 1},
         "start": {"type": "number", "minimum": 0},
         "end": {"type": "number", "minimum": 0},

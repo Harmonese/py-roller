@@ -14,6 +14,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "alignment_mode": {"enum": ["unordered", "ordered"]},
         "cache_dir": {"$ref": "#/$defs/path"},
         "whisper_model": {"$ref": "#/$defs/path"},
         "ctc_model": {"$ref": "#/$defs/path"},

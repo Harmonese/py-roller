@@ -7,6 +7,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
 from pyroller.hybrid.core import align_evidence
+from pyroller.hybrid.config import AlignmentSettings
 from pyroller.hybrid.io import read_json, save_json
 from pyroller.backends.catalog import resolve_model
 from pyroller.config import EngineConfig
@@ -35,7 +36,8 @@ def main():
                 original=read_json(Path(run['source_run']))
                 lyrics=Path(original['lyrics']).read_text(encoding='utf-8-sig')
                 duration=original['duration']
-            new=align_evidence(lyrics,read_json(path.parent/'raw-windows.json'),logp,vocabulary,.0125,.02,duration)
+            new=align_evidence(lyrics,read_json(path.parent/'raw-windows.json'),logp,vocabulary,.0125,.02,duration,
+                               settings=AlignmentSettings(alignment_mode='unordered'))
             new=json.loads(json.dumps(new,allow_nan=False))
             for key in old.keys()-{'metrics'}:
                 assert new[key]==old[key],f'{path}: {key} changed'

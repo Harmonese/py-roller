@@ -48,7 +48,7 @@ def align(audio, lyrics, output, config=None, on_event=None, *, request_id=None)
         run = dict(schema_version=2, protocol_version=2, request_id=stream.request_id,
             status='running', audio=str(audio), lyrics=str(lyrics),
             config={k: str(v) if isinstance(v, Path) else v for k, v in asdict(config).items()},
-            reference_used=False, reference_order_used=False)
+            reference_used=False, reference_order_used=config.alignment_mode == 'ordered')
         save_json(output/'run.json', run)
         run.update(audio_sha256=sha256(audio), lyrics_sha256=sha256(lyrics))
         tick = time.perf_counter()
@@ -82,11 +82,13 @@ def align(audio, lyrics, output, config=None, on_event=None, *, request_id=None)
             if count == 0: continue
             result = align_evidence(text, windows, logp[:count], ctc.vocabulary,
                 ctc.origin, ctc.step, duration if final else window['end'], final=final,
-                settings=AlignmentSettings())
+                settings=AlignmentSettings(alignment_mode=config.alignment_mode))
             processing_seconds += result['metrics']['processing_seconds']
             revision += 1
             event = dict(type='snapshot', revision=revision,
                 audio_available_until=window['end'], final=final, occurrences=result['occurrences'])
+            if config.alignment_mode == 'ordered':
+                event.update(alignment_mode='ordered', unaligned_lines=result['unaligned_lines'])
             if not final:
                 atomic_write(output/'preview.lrc', lrc_text(result['occurrences']))
                 stream.emit(event)

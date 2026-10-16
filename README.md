@@ -4,7 +4,7 @@
 
 **0.10.1**：Whisper large-v3 发现歌词实例，CTC 细化时间；提供面向 Rolling Pebble 的 **Protocol v2**。0.10 系列重写不兼容 0.9 CLI、配置或协议。
 
-从 0.10.0 升级后先运行 `py-roller models migrate`，将已有模型导入统一目录，避免重新下载。0.10.1 不改变歌词匹配或定时算法。
+从 0.10.0 升级后先运行 `py-roller models migrate`，将已有模型导入统一目录，避免重新下载。当前默认采用完整有序歌词对齐；需要原来的自由匹配行为时显式指定 `--alignment-mode unordered`。
 
 ## 安装
 
@@ -25,6 +25,7 @@ py-roller doctor
 ```bash
 py-roller align song.flac lyrics.txt -o output/song
 py-roller align song.flac lyrics.txt -o output/song-vocals --audio-mode vocals
+py-roller align song.flac complete-lyrics.txt -o output/song-ordered --alignment-mode ordered
 # 同样支持
 python -m pyroller align song.flac lyrics.txt -o output/song
 ```
@@ -32,6 +33,8 @@ python -m pyroller align song.flac lyrics.txt -o output/song
 `lyrics.txt` 为 UTF-8 无时间戳歌词，一行一句；忽略 `[Chorus]` 等段落标题。输出目录必须不存在，防止覆盖已有结果。失败后用新的输出目录重试，已完成的模型窗口会复用缓存。
 
 默认使用原声。Demucs 可能把机器人声或特殊唱法当作伴奏移除，应由调用者明确选择。当前仅支持英文、行级 LRC，不承诺精确逐词卡拉 OK 时间。
+
+默认 `ordered` 模式要求输入完整且顺序、重复次数准确，保留每次输入行并按顺序定位。`unordered` 模式将输入当作歌词集合，允许重排和重复。可用 `PYROLLER_ALIGNMENT_MODE=unordered` 切回自由匹配，显式 `--alignment-mode` 优先。未能定位的输入行保存在 `alignment.json` 的 `unaligned_lines` 中，不生成虚假的 LRC 时间。
 
 ## 输出
 

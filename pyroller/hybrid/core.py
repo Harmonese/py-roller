@@ -14,6 +14,9 @@ def align_evidence(lyrics,windows,logp,vocabulary,origin,step,duration,settings=
         or not np.isfinite([origin,step,duration]).all() or step<=0 or duration<=0
         or not 0<=vocabulary.get('<pad>',-1)<logp.shape[1]):
         raise ValueError('Invalid CTC evidence or timing metadata')
+    if settings.alignment_mode == 'ordered':
+        from .ordered import align_ordered
+        return align_ordered(lyrics, windows, logp, vocabulary, origin, step, duration, settings, final)
     inventory=lyric_inventory(lyrics)
     if settings.stitching_mode=='evidence':
         from .stitching import stitch_evidence
@@ -62,6 +65,6 @@ def align_evidence(lyrics,windows,logp,vocabulary,origin,step,duration,settings=
         variant_decisions=variants,timing_groups=groups,discovery_diagnostics=discovery,
         candidate_decisions=decisions,
         unmatched_words=[dict(index=i,**word) for i,word in enumerate(words) if i not in used],
-        settings=asdict(settings),reference_used=False,reference_order_used=False,
+        settings={k:v for k,v in asdict(settings).items() if k!='alignment_mode'},reference_used=False,reference_order_used=False,
         metrics=dict(stitch_seconds=stitched-tick,matching_seconds=matched-stitched,
                      alignment_seconds=finished-matched,processing_seconds=finished-tick))

@@ -64,7 +64,7 @@ def main():
                 folder = out/mode/view/sid
                 if (folder/'result.json').exists(): continue
                 for memo in (phrase_cost, substitution, phones): memo.cache_clear()
-                result = align_evidence(*inputs, settings=AlignmentSettings(scoring_mode=mode))
+                result = align_evidence(*inputs, settings=AlignmentSettings(scoring_mode=mode, alignment_mode='unordered'))
                 write_replay(result, provenance, folder)
                 print(sid, view, mode, result['metrics'], flush=True)
     summaries = []; md = ['# Fixed scoring validation', '',

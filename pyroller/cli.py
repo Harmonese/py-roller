@@ -36,6 +36,7 @@ def parser():
     human.add_argument('lyrics', type=Path, help='UTF-8 plain lyrics, one line per phrase')
     human.add_argument('-o', '--output', type=Path, required=True, help='New output directory')
     human.add_argument('--audio-mode', choices=['mix', 'vocals'], default='mix')
+    human.add_argument('--alignment-mode', choices=['unordered', 'ordered'], default=None)
     human.add_argument('--ctc-device', choices=['auto', 'cpu', 'mps'], default='auto')
     human.add_argument('--cpu-threads', type=int, default=4)
     human.add_argument('--offline', action='store_true')
@@ -117,6 +118,7 @@ def main(argv=None):
         else:
             audio, lyrics, output, request_id = args.audio, args.lyrics, args.output, None
             config = EngineConfig(cache_dir=args.cache_dir, whisper_model=args.whisper_model, ctc_model=args.ctc_model,
+                **({'alignment_mode': args.alignment_mode} if args.alignment_mode is not None else {}),
                 audio_mode=args.audio_mode, ctc_device=args.ctc_device, cpu_threads=args.cpu_threads,
                 offline=args.offline, previews=not args.no_previews)
         with redirect_stdout(sys.stderr):
