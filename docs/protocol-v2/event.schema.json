@@ -11,6 +11,8 @@
     "sequence": {"type": "integer", "minimum": 1},
     "type": {"enum": ["started", "progress", "snapshot", "completed", "failed", "cancelled"]},
     "stage": {"type": "string"},
+    "language": {"enum": ["en", "zh", "zh-en", "mul"]},
+    "timing_backend": {"type": "string"},
     "audio_available_until": {"type": "number", "minimum": 0},
     "duration": {"type": "number", "exclusiveMinimum": 0},
     "revision": {"type": "integer", "minimum": 1},

@@ -6,6 +6,27 @@ The format loosely follows Keep a Changelog and this project uses Semantic Versi
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-20
+
+### Added
+
+- Experimental Mandarin and Chinese/English mixed text profiles for both ordered and unordered alignment, shared script-aware units, traditional/simplified matching, contextual Mandarin pronunciation costs and source-preserving ASR timing.
+- CLI/Protocol `language` configuration, pinned Mandarin CTC model management, explicit label encoding and frame geometry, and compact CTC evidence preserving background maxima. English decoding options and cache identities are preserved.
+- Fixed two-song Mandarin acceptance tools; code-switching acoustic quality remains unvalidated. No TTS or additional ASR voting pipeline is introduced.
+- Experimental `mul` profile with pinned XLSR-53-espeak phoneme CTC, Unicode lyric units, script-aware eSpeak routing, exact phoneme-token encoding, source mappings and pronunciation-aware cache identities. Optional `mul` dependencies and native eSpeak checks are exposed through CLI/model management/doctor and protocol v2.
+- Fixed ordered/original-mix validation for The Veldt, 從流水線上來，到流水線上去 and Песня без слов; existing English and Mandarin specialization remains separate.
+
+### Fixed
+
+- Preserve non-ASCII lyric words and reassemble Whisper subword pieces without inventing independent timestamps. Isolate unencodable lines so neighbouring lines can still receive CTC refinement.
+- Keep explicit CTC blank/frame geometry and exact phoneme-token boundaries; preserve background evidence when compacting Mandarin probabilities and freeze G2P mappings for reproducible multilingual cache replay.
+
+### Compatibility and validation
+
+- Ordered remains the default; Protocol v2 gains optional language/backend fields without changing its version. Existing English model identities and decoding options remain unchanged.
+- Mandarin `zh` and general `mul` are experimental. Real code-switching singing is not yet validated; `zh-en` remains the limited Chinese-CTC profile. Install `py-roller[mul]` plus native espeak-ng for mul. Model weights remain separate downloads.
+- 167 tests, ten English cache regressions, two Mandarin ordered regressions, and the three-song mul replay/schema checks pass. Validation results and known timing/missing-line limitations are recorded in the research reports.
+
 ## [0.10.2] - 2026-10-17
 
 ### Added

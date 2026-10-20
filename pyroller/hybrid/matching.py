@@ -3,14 +3,9 @@ from functools import lru_cache
 import hashlib
 import math
 import re
-import unicodedata
 
 import numpy as np
-
-
-def normalize(text):
-    text = unicodedata.normalize("NFKC", text).lower().replace("\u2019", "\x27")
-    return " ".join(re.findall(r"[a-z]+(?:\x27[a-z]+)*|[0-9]+", text))
+from ..language import normalize, text_units, resolve_language, is_han, asr_units
 
 
 def lyric_inventory(text):
@@ -20,14 +15,15 @@ def lyric_inventory(text):
     for raw in text.splitlines():
         raw = raw.strip()
         if not raw or re.fullmatch(r'\[[^\]]+\]', raw): continue
+        resolve_language(raw)
         normalized = normalize(raw)
         if not normalized: continue
-        if any(c.isalpha() and not 'a' <= c.lower() <= 'z' for c in raw):
-            raise ValueError('This version supports English lyrics only')
         if normalized not in inventory:
             inventory[normalized] = dict(text=raw, normalized=normalized,
                 line_id='line-'+hashlib.sha256(normalized.encode()).hexdigest()[:12],
                 words=normalized.split())
+            if any(is_han(t) for t,a,b in text_units(raw)):
+                inventory[normalized]['source_units']=[dict(token=t,start=a,end=b) for t,a,b in text_units(raw)]
     if not inventory: raise ValueError('Empty lyric inventory')
     # Inventory order cannot leak a preferred performance order into inference.
     return [inventory[k] for k in sorted(inventory)]
@@ -36,8 +32,19 @@ def lyric_inventory(text):
 def window_words(window):
     words = []
     for si, segment in enumerate(window['segments']):
-        for wi, word in enumerate(segment.get('words') or []):
-            for token in normalize(word['word']).split():
+        original=segment.get('words') or []
+        if window.get('language') in ('zh','yue') or any(c.isalpha() and not c.isascii() for w in original for c in w['word']):
+            for unit in asr_units(original):
+                start=float(window['start'])+unit['start'];end=float(window['start'])+unit['end']
+                if not 0<=start<=end or not np.isfinite([start,end]).all():raise ValueError('Invalid ASR timestamp')
+                words.append(dict(token=unit['token'],start=min(start,window['end']),end=min(end,window['end']),
+                    probability=unit['probability'],window=window['index'],segment=si,word=unit['word'],
+                    available_until=window['end'],source_id=[window['index'],si,*unit['source_indices']],
+                    source_text=unit['source_text'],source_span=unit['source_span'],shared_time=unit['shared_time']))
+            continue
+        for wi, word in enumerate(original):
+            units=text_units(word['word'])
+            for token,raw_start,raw_end in units:
                 # Fresh Whisper output can carry numpy scalars; cached JSON
                 # carries Python scalars. Keep both paths identical at ingress.
                 start = float(window['start'])+float(word['start'])

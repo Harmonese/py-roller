@@ -10,6 +10,8 @@
     "request_id": {"type": "string"},
     "status": {"const": "complete"},
     "duration": {"type": "number", "exclusiveMinimum": 0},
+    "language": {"enum": ["en", "zh", "zh-en", "mul"]},
+    "timing_backend": {"type": "string"},
     "alignment_mode": {"enum": ["unordered", "ordered"]},
     "unaligned_lines": {"type": "array", "items": {"$ref": "#/$defs/unaligned"}},
     "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}}

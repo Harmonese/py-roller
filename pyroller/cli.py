@@ -22,13 +22,14 @@ def _json(value, file=None):
 
 
 def _model_options(parser):
+    parser.add_argument('--language', choices=['auto','en','zh','zh-en','mul'],default='auto')
     parser.add_argument('--cache-dir', type=Path, default=EngineConfig.cache_dir)
     parser.add_argument('--whisper-model', type=Path, help='Local Whisper checkpoint directory')
     parser.add_argument('--ctc-model', type=Path, help='Local CTC checkpoint directory')
 
 
 def parser():
-    root = argparse.ArgumentParser(prog='py-roller', description='Align English plain lyrics to songs with Whisper large-v3 and CTC.')
+    root = argparse.ArgumentParser(prog='py-roller', description='Align plain lyrics with English, Mandarin or multilingual phoneme profiles.')
     root.add_argument('--version', action='version', version=f'py-roller {__version__} (protocol 2)')
     commands = root.add_subparsers(dest='command', required=True)
     human = commands.add_parser('align', help='Create LRC from an audio file and untimed lyrics')
@@ -51,7 +52,7 @@ def parser():
     _model_options(doctor)
     models = commands.add_parser('models', help='Inspect or download pinned production models')
     models.add_argument('action', choices=['list', 'download', 'migrate', 'remove'])
-    models.add_argument('--kind', choices=['all', 'whisper', 'ctc', 'demucs'], default='all')
+    models.add_argument('--kind', choices=['all', 'whisper', 'ctc', 'ctc-zh', 'ctc-mul', 'demucs'], default='all')
     models.add_argument('--apply', action='store_true', help='Apply model removal (otherwise preview only)')
     models.add_argument('--json', action='store_true')
     _model_options(models)
@@ -83,7 +84,7 @@ def main(argv=None):
         if args.command in ('doctor', 'models'):
             from .doctor import inspect, model_inventory
             config = EngineConfig(cache_dir=args.cache_dir, whisper_model=args.whisper_model,
-                                  ctc_model=args.ctc_model, audio_mode=getattr(args, 'audio_mode', 'mix'))
+                                  ctc_model=args.ctc_model, language=args.language,audio_mode=getattr(args, 'audio_mode', 'mix'))
             with redirect_stdout(sys.stderr):
                 if args.command == 'doctor':
                     report = inspect(config)
@@ -92,7 +93,7 @@ def main(argv=None):
                     if args.apply and args.action != 'remove':
                         raise ValueError('--apply is only valid for models remove')
                     operations = []
-                    for kind in MODELS if args.kind == 'all' else (args.kind,):
+                    for kind in ('whisper','ctc','demucs') if args.kind == 'all' else (args.kind,):
                         if args.action == 'download': resolve_model(kind, config)
                         elif args.action == 'migrate': migrate_model(kind, config)
                         elif args.action == 'remove':
@@ -118,6 +119,7 @@ def main(argv=None):
         else:
             audio, lyrics, output, request_id = args.audio, args.lyrics, args.output, None
             config = EngineConfig(cache_dir=args.cache_dir, whisper_model=args.whisper_model, ctc_model=args.ctc_model,
+                language=args.language,
                 **({'alignment_mode': args.alignment_mode} if args.alignment_mode is not None else {}),
                 audio_mode=args.audio_mode, ctc_device=args.ctc_device, cpu_threads=args.cpu_threads,
                 offline=args.offline, previews=not args.no_previews)

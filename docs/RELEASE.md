@@ -1,6 +1,6 @@
-# 0.10.2 发布准备
+# 0.10.3 发布准备
 
-本文件是准备清单，不代表 PyPI 已发布。版本与 Changelog 已更新至 0.10.2，发布标签为 `v0.10.2`。推送标签不会发布到 PyPI；GitHub Release published 才会触发上传。
+版本与 Changelog 为 0.10.3，发布日期 2026-10-20，标签为 `v0.10.3`。推送标签不会发布到 PyPI；GitHub Release published 才会触发上传。发布是否完成以工作流和 PyPI 实际版本为准。
 
 ## 本地检查
 
@@ -10,12 +10,16 @@ python -m pytest
 python -m pyroller --version
 python -m pyroller align --help
 python -m pyroller doctor --json
-python -m build --outdir dist/0.10.2
-python scripts/check_release.py dist/0.10.2
-python -m twine check dist/0.10.2/*
+python -m pyroller doctor --language zh --json
+python -m pyroller doctor --language mul --json
+python -m build --outdir dist/0.10.3
+python scripts/check_release.py dist/0.10.3
+python -m twine check dist/0.10.3/*
 ```
 
 `doctor` 的模型就绪状态取决于本机缓存；CI 不下载神经模型。源码包包含公开文档、协议 Schema、测试与 C++ 源码，不包含歌曲、模型、研究缓存或旧引擎。
+
+mul 的真实环境检查还需要 `pip install '.[mul]'` 和本机 espeak-ng。普通核心测试用可控替身验证该接口，不要求 CI 下载声学模型；en/zh 的基本安装不强制安装 mul 发音依赖。zh/mul 以实验功能发布，README/CHANGELOG 必须保留真实混唱未验收及当前漏句/定时限制。
 
 必须从 sdist 再构建 wheel，并在源码目录之外安装该 wheel 验证 CLI 和协议测试，避免只验证可编辑安装。C++ 扩展使 wheel 与平台/Python 版本相关；本地 macOS wheel 不能安装到 Linux 或 Windows。
 
@@ -36,4 +40,4 @@ python -m twine check dist/0.10.2/*
 
 `research/scripts/check_release_replay.py` 可在本机现有证据齐全时比较十组 v3 缓存结果，忽略耗时，逐项比较内部结果内容；不运行模型，不将人工时间输入推理。离线工具与本机数据不属于发布包。
 
-0.10.0 的历史验证见 [发布验证记录](RELEASE_VALIDATION_0.10.md)，0.10.1 模型管理变更及验证见 [维护检查报告](MAINTENANCE_AUDIT.md)。若工具或环境检查未通过，记录实际限制，不能只因代码版本已更新就宣称发布完成。
+本次验证见 [0.10.3 发布记录](RELEASE_VALIDATION_0.10.3.md)。0.10.0 的历史验证见 [发布验证记录](RELEASE_VALIDATION_0.10.md)，0.10.1 模型管理变更及验证见 [维护检查报告](MAINTENANCE_AUDIT.md)。若工具或环境检查未通过，记录实际限制，不能只因代码版本已更新就宣称发布完成。

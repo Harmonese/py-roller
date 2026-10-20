@@ -4,6 +4,10 @@
 
 优先阅读：
 
+- [mul 音素后端三首验证](MULTILINGUAL_VALIDATION.md)：英文、中文、俄文，全部 ordered 原声；通用后端与特化 en/zh 独立。
+
+- [中文与中英混唱接入及两首验收](CHINESE_VALIDATION.md)：两首歌曲、原声/人声、两种模式的固定验证；含具体限制和资源阻塞。
+
 - [v3 扩展验证](WHISPER_V3_EXPANDED_ZH.md)：六首十组的整体覆盖与时间取舍。其“暂不切默认”是当时的建议，随后用户决定以 v3 固定为基线。
 - [v3 初轮测试](WHISPER_V3_VALIDATION.md)。
 - [小词扣分与统一评分](SCORING_VALIDATION.md)、[窗口证据保全](WINDOW_EVIDENCE_VALIDATION.md)：正式默认算法的历史依据。

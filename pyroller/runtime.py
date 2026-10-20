@@ -1,5 +1,5 @@
 """File-job orchestration, independent of matching and neural implementations."""
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 import time
 
@@ -15,6 +15,8 @@ from .backends.ctc import CTCStream
 from .backends.whisper import WhisperStream
 from .backends.separation import separate
 from .protocol import EventStream, alignment_document, error_code
+from .language import resolve_language, TEXT_POLICY
+from .backends.codec import text_diagnostics
 
 
 def visible_frames(blocks, available_until):
@@ -42,6 +44,8 @@ def align(audio, lyrics, output, config=None, on_event=None, *, request_id=None)
         audio, lyrics, output = (Path(p).expanduser().resolve() for p in (audio, lyrics, output))
         text = lyrics.read_text(encoding='utf-8-sig')
         lyric_inventory(text)
+        requested_language=config.language
+        config=replace(config,language=resolve_language(text,config.language))
         if not audio.is_file(): raise FileNotFoundError(f'Audio does not exist: {audio}')
         output.mkdir(parents=True, exist_ok=False)
         stream.attach(output/'events.jsonl')
@@ -51,6 +55,7 @@ def align(audio, lyrics, output, config=None, on_event=None, *, request_id=None)
             reference_used=False, reference_order_used=config.alignment_mode == 'ordered')
         save_json(output/'run.json', run)
         run.update(audio_sha256=sha256(audio), lyrics_sha256=sha256(lyrics))
+        run.update(requested_language=requested_language,language=config.language,text_policy=TEXT_POLICY)
         tick = time.perf_counter()
         selected_audio = separate(audio, config, stream.emit) if config.audio_mode == 'vocals' else audio
         separation_seconds = time.perf_counter()-tick
@@ -60,7 +65,7 @@ def align(audio, lyrics, output, config=None, on_event=None, *, request_id=None)
         audio_hash = sha256(selected_audio)
         stream.emit(dict(type='progress', stage='models'))
         ctc_path, whisper_path = resolve_model('ctc', config), resolve_model('whisper', config)
-        ctc = CTCStream(samples, audio_hash, ctc_path, config)
+        ctc = CTCStream(samples, audio_hash, ctc_path, config, text)
         blocks, arrays = [], []
         for block in ctc:
             arrays.append(block['logp'])
@@ -84,9 +89,13 @@ def align(audio, lyrics, output, config=None, on_event=None, *, request_id=None)
                 ctc.origin, ctc.step, duration if final else window['end'], final=final,
                 settings=AlignmentSettings(alignment_mode=config.alignment_mode))
             processing_seconds += result['metrics']['processing_seconds']
+            timing_backend='wav2vec2_phoneme_ctc' if getattr(ctc,'encoder',None) is not None else 'wav2vec2_ctc'
+            result.update(language=config.language,timing_backend=timing_backend)
+            if config.language!='en':result['text_diagnostics']=text_diagnostics(text,ctc.vocabulary)
             revision += 1
             event = dict(type='snapshot', revision=revision,
-                audio_available_until=window['end'], final=final, occurrences=result['occurrences'])
+                audio_available_until=window['end'], final=final, occurrences=result['occurrences'],
+                language=config.language,timing_backend=timing_backend)
             if config.alignment_mode == 'ordered':
                 event.update(alignment_mode='ordered', unaligned_lines=result['unaligned_lines'])
             if not final:

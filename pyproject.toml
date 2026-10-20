@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-roller"
-version = "0.10.2"
-description = "Ordered and unordered English lyric alignment with Whisper large-v3, CTC timing and protocol v2."
+version = "0.10.3"
+description = "Ordered and unordered lyric alignment with English, Mandarin and multilingual phoneme backends."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = "MIT"
@@ -20,6 +20,8 @@ keywords = [
   "cli",
   "transcription",
   "music",
+  "multilingual",
+  "phoneme",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -37,6 +39,9 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
+  "opencc-python-reimplemented>=0.1.7,<0.2",
+  "pypinyin>=0.55,<0.56",
+  "regex>=2024.0",
   "cmudict>=1.0,<2",
   "numpy>=1.24",
   "torch>=2.6",
@@ -46,6 +51,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mul = ["phonemizer>=3.3,<4", "langid>=1.1.6,<2"]
 vocals = ["demucs>=4,<5", "torchaudio>=2.1"]
 test = [
   "pytest>=8",
@@ -58,6 +64,12 @@ release = ["build>=1.2", "twine>=6", "pybind11>=2.12"]
 
 [project.scripts]
 py-roller = "pyroller.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Harmonese/py-roller"
+Repository = "https://github.com/Harmonese/py-roller"
+Issues = "https://github.com/Harmonese/py-roller/issues"
+Changelog = "https://github.com/Harmonese/py-roller/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 include-package-data = false

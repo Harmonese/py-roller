@@ -29,6 +29,8 @@ def alignment_document(result, request_id, duration):
                 lines=public_lines(result['occurrences']))
     if result.get('reference_order_used'):
         document.update(alignment_mode='ordered', unaligned_lines=result['unaligned_lines'])
+    for key in ('language','timing_backend'):
+        if key in result:document[key]=result[key]
     return document
 
 

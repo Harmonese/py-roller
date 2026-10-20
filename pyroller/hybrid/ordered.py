@@ -6,7 +6,8 @@ import numpy as np
 
 from .matching import lyric_inventory
 from .stitching import stitch_evidence
-from .text_distance import phrase_cost, word_weight
+from .text_distance import phrase_cost, word_weight, phrase_comparator
+from ..language import independent_support, is_han, normalize
 from .alignment import encode, frame_slice, word_evidence, refine
 from ._alignment import forced_path
 
@@ -38,6 +39,7 @@ def align_words(target, observed, final=True):
     costs[0, 0] = 0.
     backs = np.zeros((n+1, m+1), dtype=np.uint8)
     edges = ((1,1), (1,2), (2,1), (1,0), (0,1))
+    compare=phrase_comparator(target,observed)
     for i in range(n+1):
         for j in range(m+1):
             if i == j == 0: continue
@@ -47,7 +49,7 @@ def align_words(target, observed, final=True):
                 if not dj: penalty = word_weight(target[i-1])
                 elif not di: penalty = word_weight(observed[j-1])
                 else:
-                    pair = phrase_cost(tuple(target[i-di:i]), tuple(observed[j-dj:j]))
+                    pair = compare(i,j,di,dj)
                     if pair is None: continue
                     penalty = pair[0]*max(sum(map(word_weight,target[i-di:i]))/di,
                                           sum(map(word_weight,observed[j-dj:j]))/dj)
@@ -62,7 +64,7 @@ def align_words(target, observed, final=True):
             choices=[k for k in range(len(edges)) if backs[i,j] & (1<<k)]
             k=choices[-1] if reverse else choices[0];di,dj=edges[k]
             if di and dj:
-                cost,kind=phrase_cost(tuple(target[i-di:i]),tuple(observed[j-dj:j]))
+                cost,kind=compare(i,j,di,dj)
                 if cost<1:
                     mapping.extend((li,wi,cost) for li in range(i-di,i) for wi in range(j-dj,j))
             i-=di;j-=dj
@@ -83,7 +85,14 @@ def align_ordered(text, windows, logp, vocabulary, origin, step, duration, setti
     for a,b in spans:
         matches=[(li-a,wi,c) for li,wi,c in mapping if a<=li<b]
         # Two supported lyric words (or the entire one-word line) establish a region.
-        if len({li for li,wi,c in matches}) >= min(2,b-a):
+        independent=independent_support([dict(asr_word=wi) for li,wi,c in matches],words)
+        literal=any(c==0 for li,wi,c in matches)
+        shared=any('source_id' in words[wi] for li,wi,c in matches)
+        whole_phrase=(shared and independent==1 and
+            {li for li,wi,c in matches if c==0}==set(range(b-a)) and
+            any(normalize(words[wi].get('source_text','')).split()==target[a:b] for li,wi,c in matches))
+        if len({li for li,wi,c in matches}) >= min(2,b-a) and (not shared or independent>=min(2,b-a) or whole_phrase) and (
+            not any(is_han(t) for t in target[a:b]) or literal):
             anchors.append(matches)
         else: anchors.append([])
     coarse=[]

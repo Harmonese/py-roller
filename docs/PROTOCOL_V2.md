@@ -1,6 +1,8 @@
 # Protocol v2：Rolling Pebble 接入
 
-适用 py-roller 0.10.x（当前 0.10.2）。版本号是 `protocol_version: 2`，与 Python 包版本、缓存目录和内部诊断 schema 无关。旧 protocol v1 不兼容；此文档不表示相邻 Rolling Pebble 代码已迁移。
+适用 py-roller 0.10.x（当前 0.10.3）。版本号是 `protocol_version: 2`，与 Python 包版本、缓存目录和内部诊断 schema 无关。旧 protocol v1 不兼容；此文档不表示相邻 Rolling Pebble 代码已迁移。
+
+请求支持 `options.language: "auto" | "en" | "zh" | "zh-en" | "mul"`，默认 auto 根据歌词文字选择。最终结果与 snapshot 的可选 `language` 表示实际配置，`timing_backend` 表示定时后端（多语言音素为 `wav2vec2_phoneme_ctc`）。`run.json` 另记请求语言、实际语言和文字处理版本。zh 为普通话，不能按汉字自动推断粤语等方言；zh-en 的真实歌声质量尚待验收。mul 是独立的通用音素后端，覆盖语言不代表歌声质量均已经验收。原文及输入行身份继续保留，不将简繁规范化或音素文本用于显示。
 
 新增可选 `options.alignment_mode: "unordered" | "ordered"`，显式值覆盖 `PYROLLER_ALIGNMENT_MODE`，未设置时默认 ordered。ordered 要求输入完整并保留所有重复次数。
 
@@ -36,7 +38,7 @@ ordered 的结果与每次 snapshot 增加 `alignment_mode: "ordered"` 及 `unal
 stdout 每行一个 JSON 对象，UTF-8，无前缀；stderr 单独收集日志。不要把两个流合并再解析。每条事件包含：
 
 ```json
-{"protocol_version":2,"engine":"py-roller","engine_version":"0.10.2","request_id":"job-001","sequence":1,"type":"started"}
+{"protocol_version":2,"engine":"py-roller","engine_version":"0.10.3","request_id":"job-001","sequence":1,"type":"started"}
 ```
 
 `sequence` 从 1 开始严格递增。客户端检查版本、任务 ID，忽略已经处理过的 sequence。允许未来增加输出字段；不要依赖 JSON key 顺序或 stderr 文本。

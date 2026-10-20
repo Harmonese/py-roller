@@ -25,7 +25,7 @@ jobs:
       - name: Install wheel and test outside the checkout
         run: |
           python -m pip install --no-deps dist/*.whl
-          python -m pip install numpy cmudict pytest jsonschema
+          python -m pip install numpy cmudict pytest jsonschema opencc-python-reimplemented pypinyin regex
           cp -R tests "$RUNNER_TEMP/tests"
           cp -R docs "$RUNNER_TEMP/docs"
           cd "$RUNNER_TEMP"
@@ -55,7 +55,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          test "$RELEASE_TAG" = v0.10.2
+          test "$RELEASE_TAG" = v0.10.3
           mkdir publish
           cp dist/*.tar.gz publish/
       - uses: pypa/gh-action-pypi-publish@release/v1

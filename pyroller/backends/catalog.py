@@ -11,6 +11,8 @@ from ..hybrid.io import save_json, sha256
 MODELS = {
     'whisper': ('Systran/faster-whisper-large-v3', 'edaa852ec7e145841d8ffdb056a99866b5f0a478', 'faster_whisper'),
     'ctc': ('facebook/wav2vec2-large-960h-lv60-self', '54074b1c16f4de6a5ad59affb4caa8f2ea03a119', 'huggingface'),
+    'ctc-zh': ('jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn', '99ccb2737be22b8bb50dcfcc39ad4d567fb90cfd', 'huggingface'),
+    'ctc-mul': ('facebook/wav2vec2-xlsr-53-espeak-cv-ft', '2c733782da5604684829819a5eb744c193fe9398', 'huggingface'),
 }
 DEMUCS_FILE = '955717e8-8726e21a.th'
 MODELS['demucs'] = ('htdemucs', '955717e8-8726e21a', 'demucs')
@@ -30,7 +32,13 @@ def checkpoint_available(path, kind):
             and bool(list(path.glob('*.safetensors')) or list(path.glob('pytorch_model*.bin'))))
 
 
+def model_kind(kind, config):
+    if kind=='ctc' and config.language=='mul':return 'ctc-mul'
+    return 'ctc-zh' if kind=='ctc' and config.language in ('zh','zh-en') else kind
+
+
 def model_directory(kind, config):
+    kind=model_kind(kind,config)
     return Path(config.cache_dir)/'models'/kind/MODELS[kind][1]
 
 
@@ -69,6 +77,8 @@ def _copy(source, target):
 
 
 def legacy_model(kind, config):
+    kind=model_kind(kind,config)
+    if kind in ('ctc-zh','ctc-mul'): return None
     repo, revision, provider = MODELS[kind]
     if kind == 'demucs':
         torch_root = Path(os.environ.get('TORCH_HOME', str(Path(os.environ.get('XDG_CACHE_HOME', str(Path.home()/'.cache')))/'torch')))
@@ -104,7 +114,7 @@ def install_model(kind, config, source=None):
             else:
                 if source is None:
                     from huggingface_hub import snapshot_download
-                    repo, revision, _ = MODELS[kind]
+                    repo, revision, _ = MODELS[model_kind(kind,config)]
                     snapshot_download(repo, revision=revision, local_dir=stage)
                 else:
                     shutil.copytree(source, stage, dirs_exist_ok=True, copy_function=_copy)
@@ -150,6 +160,9 @@ def fingerprint(path, kind):
         weights = sorted(path.glob('*.safetensors')) or sorted(path.glob('pytorch_model*.bin'))
         if not weights: raise ValueError(f'CTC checkpoint has no weights: {path}')
         files = [*weights, path/'config.json', path/'preprocessor_config.json', path/'vocab.json']
+        token_config=path/'tokenizer_config.json'
+        if token_config.exists() and 'Phoneme' in json.loads(token_config.read_text()).get('tokenizer_class',''):
+            files.extend((token_config,path/'special_tokens_map.json'))
     return {p.name: sha256(p) for p in files if p.exists()}
 
 

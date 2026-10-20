@@ -14,6 +14,7 @@ py-roller align song.flac lyrics.txt -o output/song --audio-mode vocals
 |---|---|---|
 | `--audio-mode` | `mix` | `mix` 原声，`vocals` 显式 Demucs |
 | `--alignment-mode` | `PYROLLER_ALIGNMENT_MODE` 或 `ordered` | `unordered` 自由重复匹配；`ordered` 完整有序歌词对齐 |
+| `--language` | `auto` | 按歌词文字选择配置；可显式指定 `en`、`zh`、`zh-en`、`mul` |
 | `--offline` | 关闭 | 不下载模型；已有 Demucs 权重时可离线完成新的分离 |
 | `--cache-dir` | `~/.cache/py-roller/v1` | 模型与推理证据缓存 |
 | `--whisper-model` | 固定 large-v3 | 显式本地 faster-whisper 检查点目录 |
@@ -45,13 +46,21 @@ py-roller models download
 py-roller models download --kind whisper --cache-dir /path/to/cache
 py-roller models migrate --cache-dir /path/to/cache
 py-roller models download --kind demucs
+py-roller models download --kind ctc --language zh
+py-roller models list --kind ctc-zh
 py-roller models remove --kind whisper
 py-roller models remove --kind whisper --apply
 ```
 
-`list` 不访问网络、不加载权重。`download` 准备缺失的固定版本，可指定 `whisper`、`ctc`、`demucs` 或默认 `all`（包含三者）。Whisper large-v3 是 CTranslate2 检查点，不是 OpenAI 的 `.pt` 权重。模型可用性只检查必要文件，不表示推理质量或文件完整哈希已验证；Demucs 安装时校验官方文件名中的 SHA256 前缀。
+`list` 不访问网络、不加载权重。`download` 准备缺失的固定版本，可指定 `whisper`、`ctc`、`ctc-zh`、`ctc-mul`、`demucs` 或默认 `all`（Whisper、所选语言 CTC、Demucs）。Whisper large-v3 是 CTranslate2 检查点，不是 OpenAI 的 `.pt` 权重。模型可用性只检查必要文件，不表示推理质量或文件完整哈希已验证；Demucs 安装时校验官方文件名中的 SHA256 前缀。
 
-三种权重统一存放在 `<cache-dir>/models/<kind>/<revision>/`。运行时仅使用显式本地路径或该目录，不再隐式借用旧缓存，也不受 `HF_HOME` / `TORCH_HOME` 控制。Demucs 通过本地 `--repo` 加载，禁止依赖自行切换下载来源；分离结果仍存放在 `<cache-dir>/separation/`。
+`--language auto` 对模型管理与 doctor 按英文基础配置检查，中文检查/下载需显式加 `--language zh`；实际任务则根据歌词确定配置。中文 CTC 位于 `models/ctc-zh/<revision>/`。`zh-en` 使用同一中文检查点，它包含英文标签但尚未通过真实混唱验收。`--ctc-model` 始终优先；若显式模型无法编码文本，诊断会指出缺失字符。
+
+多语言配置使用 `pip install 'py-roller[mul]'` 及本机 espeak-ng。通过 `models download --kind ctc --language mul` 下载固定 XLSR-53-espeak 检查点，存于 `models/ctc-mul/<revision>/`；也可显式指定 `--kind ctc-mul`。`doctor --language mul` 检查发音依赖与所需模型。`models ... --kind all` 按所选语言管理模型，不下载所有语言模型。
+
+`align ... --language mul` 对英文、中文同样有效；Whisper 自动识别语言并启用多语言转录，CTC 接收发音标签。`--ctc-model` 覆盖时必须提供兼容的 Wav2Vec2Phoneme 检查点。`auto` 遇到俄文等其他文字会选择 mul；原有中文/中英自动选择暂保持不变。mul 的语言覆盖及发音歧义存在限制，不承诺自动区分同一文字的方言。
+
+所有权重统一存放在 `<cache-dir>/models/<kind>/<revision>/`。运行时仅使用显式本地路径或该目录，不再隐式借用旧缓存，也不受 `HF_HOME` / `TORCH_HOME` 控制。Demucs 通过本地 `--repo` 加载，禁止依赖自行切换下载来源；分离结果仍存放在 `<cache-dir>/separation/`。
 
 `migrate` 无网络导入已知旧路径（large-v3 实验目录、旧 Hugging Face 快照、Torch Demucs 缓存）；同盘优先硬链接，跨盘复制，保留原文件。`list --json` 同时提供 `managed_path` 和可发现的 `legacy_path`。显式 `--whisper-model` / `--ctc-model` 优先且不被自动迁移。迁移后可正常复用原推理证据。迁移源保留以兼容其他程序，硬链接源文件不可原地修改。
 

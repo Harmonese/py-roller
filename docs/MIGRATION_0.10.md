@@ -1,8 +1,10 @@
 # 迁移到 0.10.0
 
-## 当前 0.10.2 的模式选择
+## 当前 0.10.3 的模式与语言选择
 
 当前源码默认 `ordered`，输入必须完整、有序并包含所有重复行。沿用旧的无序歌词集合时，请显式设置 `--alignment-mode unordered` 或请求 `options.alignment_mode: "unordered"`。环境变量 `PYROLLER_ALIGNMENT_MODE` 可设置进程默认值，显式配置优先；旧的开发名称 `inventory` 不再接受。
+
+0.10.3 保留以上默认模式，新增 `--language zh` 普通话和 `--language mul` 通用音素后端。模型管理和 Protocol 请求 `options.language` 使用同一选择。英文既有推理配置与缓存身份保留；中文/多语言模型分别下载，不重用旧版 IPA/TTS 引擎。mul 需要 `py-roller[mul]` 与本机 espeak-ng；`zh-en` 仍是中文 CTC 的有限混唱配置。zh/mul 均处于实验阶段，真实混唱尚未验收。
 
 这是一次明确的破坏性重写，版本是 **0.10.0**，不是此前实验文档中的“v1/1.0.0”。旧文档里的 v1 指那一阶段的重构引擎，不能用来推断当前协议版本。
 
@@ -12,7 +14,7 @@
 | 实验版 `py-roller audio lyrics -o out` | `py-roller align audio lyrics -o out` |
 | protocol v1、`PYROLLER_EVENT` 前缀 | Protocol v2，纯 JSONL，无前缀 |
 | install/config/batch 等旧 CLI | Python 环境由宿主管理；`models download`、`doctor`、单任务 `run` |
-| 多语言音素/TTS、ASS | 当前仅英文 plain lyrics → LRC |
+| 多语言音素/TTS、ASS | 0.10.0 重写初期仅英文 → LRC；0.10.3 新增独立中文/多语言 CTC 配置，不恢复 TTS 或 ASS |
 | 旧配置对象、模型注册表 | `pyroller.engine.EngineConfig` 的运行选项 |
 | `align()` 返回内部 occurrences/candidates | 返回稳定 `alignment.json` 对象，歌词为 `lines` |
 | `snapshot.occurrences` | `snapshot.lines`，完整替换，不追加 |

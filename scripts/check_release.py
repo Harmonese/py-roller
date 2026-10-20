@@ -17,7 +17,7 @@ def check(folder):
             with zipfile.ZipFile(path) as archive:
                 names = archive.namelist()
                 metadata = Parser().parsestr(archive.read(next(n for n in names if n.endswith('/METADATA'))).decode())
-                assert metadata['Version'] == '0.10.2'
+                assert metadata['Version'] == '0.10.3'
                 assert 'pyroller/cli.py' in names and 'pyroller/protocol.py' in names
                 assert any('pyroller/hybrid/_alignment.' in n and n.endswith(('.so', '.pyd')) for n in names)
         else:

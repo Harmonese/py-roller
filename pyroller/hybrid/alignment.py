@@ -4,16 +4,12 @@ import numpy as np
 
 from ._alignment import forced_path
 from .matching import normalize
+from ..language import independent_support
+from ..backends.codec import encode_units
 
 
 def encode(text, vocabulary):
-    words=normalize(text).split();labels=[];spans=[]
-    for word in words:
-        start=len(labels)
-        try: labels.extend(vocabulary[c] for c in word.upper())
-        except KeyError as exc: raise ValueError(f'CTC vocabulary cannot represent {word!r}') from exc
-        spans.append((start,len(labels)))
-    return labels,spans
+    return encode_units(text,vocabulary)
 
 
 def groups_for(rows,duration,settings):
@@ -27,13 +23,17 @@ def groups_for(rows,duration,settings):
         groups.append([i])
     regions=[]
     for ids in groups:
-        first,last=ids[0],ids[-1]
-        a=max(0.,rows[first]['start']-settings.padding_seconds)
-        b=min(duration,rows[last]['end']+settings.padding_seconds)
-        if first:a=max(a,(rows[first-1]['end']+rows[first]['start'])/2)
-        if last+1<len(rows):b=min(b,(rows[last]['end']+rows[last+1]['start'])/2)
-        regions.append(dict(indices=ids,start=a,end=b))
+        regions.append(region_for(ids,rows,duration,settings))
     return regions
+
+
+def region_for(ids,rows,duration,settings):
+    first,last=ids[0],ids[-1]
+    a=max(0.,rows[first]['start']-settings.padding_seconds)
+    b=min(duration,rows[last]['end']+settings.padding_seconds)
+    if first:a=max(a,(rows[first-1]['end']+rows[first]['start'])/2)
+    if last+1<len(rows):b=min(b,(rows[last]['end']+rows[last+1]['start'])/2)
+    return dict(indices=ids,start=a,end=b)
 
 
 def frame_slice(start,end,origin,step,length):
@@ -124,13 +124,28 @@ def refine(rows,words,logp,vocabulary,origin,step,duration,settings):
         timing_method='whisper_matched_words',end_status='coarse',character_path=None) for r in rows]
     options=[[dict(start=r['start'],rank=0.,method='whisper_matched_words')] for r in rows]
     reports=[]
+    encodings={}
+    for index,row in enumerate(rows):
+        try:encodings[index]=encode(row['text'],vocabulary)
+        except ValueError as exc:
+            output[index]['timing_status']='coarse_unencodable'
+            reports.append(dict(indices=[index],status='coarse_fallback',reason=str(exc)))
+    regions=[]
     for region in groups_for(rows,duration,settings):
+        if all(i in encodings for i in region['indices']):regions.append(region);continue
+        chunk=[]
+        for index in region['indices']:
+            if index in encodings:chunk.append(index)
+            elif chunk:
+                regions.append(region_for(chunk,rows,duration,settings));chunk=[]
+        if chunk:regions.append(region_for(chunk,rows,duration,settings))
+    for region in regions:
         a,b=frame_slice(region['start'],region['end'],origin,step,len(logp));block=logp[a:b]
         labels=[];offsets=[]
         record=dict(region,frame_start=a,frame_end=b)
         try:
             for index in region['indices']:
-                encoded,spans=encode(rows[index]['text'],vocabulary);begin=len(labels)
+                encoded,spans=encodings[index];begin=len(labels)
                 labels.extend(encoded);offsets.append((index,begin,len(labels),[(begin+x,begin+y) for x,y in spans]))
             if b<=a or region['end']-region['start']>settings.group_seconds:raise ValueError('region budget or empty audio')
             path=forced_path(block,labels,vocabulary['<pad>'],settings.unknown_cost);record['path']=path
@@ -144,7 +159,11 @@ def refine(rows,words,logp,vocabulary,origin,step,duration,settings):
                              aligned['end']>=observed['start']-settings.anchor_tolerance)
                     if overlap and aligned['character_support']>=.5:anchors.append(match['lyric_word'])
                 start_time=evidence[0]['start'];end_time=evidence[-1]['end']
-                anchored=len(set(anchors))>=min(2,len(evidence)) and evidence[0]['character_support']>=.5
+                supported_matches=[m for m in row['matched_words'] if m['lyric_word'] in anchors]
+                has_shared_sources=any('source_id' in words[m['asr_word']] for m in supported_matches)
+                anchored=(len(set(anchors))>=min(2,len(evidence)) and
+                    (not has_shared_sources or independent_support(supported_matches,words)>=min(2,len(evidence)))
+                    and evidence[0]['character_support']>=.5)
                 ordinary=abs(start_time-row['coarse_start'])<=settings.ordinary_onset_shift
                 supported=ordinary or anchored
                 row.update(ctc_proposal=dict(start=start_time,end=end_time),word_evidence=evidence,

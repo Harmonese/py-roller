@@ -1,6 +1,7 @@
 """Explainable text/phrase confusions; identities are never normalized away."""
 from functools import lru_cache
 import re
+from ..language import is_han, pronunciations
 
 
 # Negation, quantifiers and pronouns keep full weight: short does not mean optional.
@@ -49,6 +50,7 @@ def expansion(word):
 @lru_cache(maxsize=32768)
 def substitution(left, right):
     if left == right: return 0., 'exact'
+    if is_han(left) or is_han(right): return 1., 'substitution'
     a, b = expansion(left), expansion(right)
     # Soft correspondence, not equivalence: do not erase negation or identities.
     if (len(a) == 2 and a[1] != 'not' and a[0] == right or
@@ -72,3 +74,15 @@ def phrase_cost(left, right):
     if expanded_left == expanded_right: return .15, 'contraction_expansion'
     if ''.join(left) == ''.join(right): return .25, 'word_segmentation'
     return None
+
+
+def phrase_comparator(left, right, baseline=phrase_cost):
+    if not any(is_han(t) for t in (*left,*right)):
+        return lambda i,j,di,dj: baseline(tuple(left[i-di:i]),tuple(right[j-dj:j]))
+    lp,rp=pronunciations(tuple(left)),pronunciations(tuple(right))
+    def compare(i,j,di,dj):
+        pair=baseline(tuple(left[i-di:i]),tuple(right[j-dj:j]))
+        if di==dj==1 and left[i-1]!=right[j-1] and lp[i-1] and lp[i-1]==rp[j-1]:
+            return .5,'mandarin_syllable'
+        return pair
+    return compare

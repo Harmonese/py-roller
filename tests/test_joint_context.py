@@ -123,6 +123,7 @@ def test_context_single_pass_cache_and_no_prompt_fallback(tmp_path):
             calls.append(options)
             return iter([Segment('Take me high',[])]),SimpleNamespace(language='en')
     context=LyricContextPass.__new__(LyricContextPass)
+    context.config=EngineConfig()
     context.samples=np.zeros(30*16000,dtype=np.float32)
     context.inventory=lyric_inventory('Take me high')
     context.tokenizer=Tokenizer();context.cache=tmp_path;context.model=Model()

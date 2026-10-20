@@ -3,7 +3,7 @@ import math
 from importlib.metadata import version
 from collections import Counter, defaultdict
 
-from .text_distance import phrase_cost, word_weight
+from .text_distance import phrase_cost, word_weight, phrase_comparator
 
 
 def discover(words, inventory, settings):
@@ -26,6 +26,7 @@ def discover(words, inventory, settings):
         for begin in range(len(words)):
             available = words[begin:begin+n+slack]
             observed = [w['token'] for w in available]; m = len(observed)
+            compare=phrase_comparator(target,observed,pair_cost)
             observed_weights = [word_weight(w) if weighted else 1. for w in observed]
             if m < max(1, n-slack):
                 counts['length_range'] += 1
@@ -39,7 +40,7 @@ def discover(words, inventory, settings):
                     options = []
                     for di, dj in steps:
                         if i >= di and j >= dj:
-                            pair = pair_cost(tuple(target[i-di:i]), tuple(observed[j-dj:j]))
+                            pair = compare(i,j,di,dj)
                             if pair:
                                 value, reason = pair
                                 weight = (max(sum(target_weights[i-di:i])/di,
